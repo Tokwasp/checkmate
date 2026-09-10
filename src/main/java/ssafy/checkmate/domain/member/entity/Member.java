@@ -32,11 +32,16 @@ public class Member extends BaseEntity {
     @Enumerated(EnumType.STRING)
     private Provider provider;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Role role;
+
     @Builder
     public Member(String email, String nickname, String profileImageUrl, Provider provider) {
         this.email = email;
         this.nickname = nickname;
         this.profileImageUrl = profileImageUrl;
         this.provider = provider;
+        this.role = Role.USER;
     }
 }

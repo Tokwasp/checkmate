@@ -27,4 +27,9 @@ public class ApiResponse<T> {
     public static <T> ApiResponse<T> accepted(T data) {
         return new ApiResponse<>(HttpStatus.ACCEPTED.value(), "성공", data);
     }
+
+    /** 실패 응답. data는 항상 null. JwtAuthenticationFilter가 401 본문을 만들 때 사용한다. */
+    public static <T> ApiResponse<T> error(HttpStatus status, String message) {
+        return new ApiResponse<>(status.value(), message, null);
+    }
 }

@@ -17,3 +17,10 @@ spring:
     console:
       enabled: true
       path: /h2-console
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-expiration: 1d
+
+auth:
+  dev-login:
+    enabled: ${DEV_LOGIN_ENABLED:false}

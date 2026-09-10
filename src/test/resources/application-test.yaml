@@ -1,0 +1,7 @@
+jwt:
+  secret: test-secret-key-for-jwt-unit-and-integration-tests-0123456789abcdef
+  access-token-expiration: 1d
+
+auth:
+  dev-login:
+    enabled: true
