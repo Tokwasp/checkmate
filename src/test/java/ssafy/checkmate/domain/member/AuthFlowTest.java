@@ -1,4 +1,4 @@
-package ssafy.checkmate.domain.auth;
+package ssafy.checkmate.domain.member;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -20,10 +20,6 @@ import ssafy.checkmate.domain.member.repository.MemberRepository;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-/**
- * 로그인 → 토큰 발급 → 토큰으로 보호된 API 호출 까지 한 사이클을 실제 HTTP 흐름으로 검증한다.
- * (test 프로필에서는 auth.dev-login.enabled=true 라서 DevAuthController 가 존재한다)
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")

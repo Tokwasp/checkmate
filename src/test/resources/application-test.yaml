@@ -5,3 +5,6 @@ jwt:
 auth:
   dev-login:
     enabled: true
+
+google:
+  client-id: test-google-client-id

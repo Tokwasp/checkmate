@@ -50,6 +50,7 @@ public ResponseEntity<ApiResponse<List<TripResponse>>> myTrips(@LoginMember Memb
    $b = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Fill($b); ($b | % { $_.ToString('x2') }) -join ''
    ```
 3. `DEV_LOGIN_ENABLED=true`로 두면 개발용 로그인이 열립니다. 운영에서는 비우거나 `false`.
+4. `GOOGLE_CLIENT_ID`에 구글 "웹 애플리케이션" 클라이언트 ID를 넣습니다(프론트 `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`와 동일 값). 구글 로그인 응답의 `aud` 검증에 씁니다.
 
 `.env`는 `springboot4-dotenv` 라이브러리가 읽습니다. 원래 있던 `spring-dotenv 4.0.0`은 Spring Boot 3 전용으로, Boot 4에서는 아무 에러 없이 `.env`를 무시하므로 교체했습니다.
 
@@ -73,24 +74,40 @@ GET /api/v1/auth/me
 Authorization: Bearer eyJ...
 ```
 
-## 소셜 로그인 담당자에게
+## 소셜 로그인
 
-토큰 발급 접점은 `AuthService.login(Member)`입니다.
+### 구글 (구현됨)
 
-```java
-// 카카오/구글 토큰 검증 후
-Member member = memberRepository.findByEmail(email)
-        .orElseGet(() -> memberRepository.save(Member.builder()
-                .email(email).nickname(nickname).profileImageUrl(imageUrl).provider(Provider.KAKAO)
-                .build()));
-TokenResponse token = authService.login(member);
-return ResponseEntity.ok(ApiResponse.success(token));
+안드로이드가 구글 인증으로 받은 ID 토큰을 서버로 넘기면, 서버가 토큰에서 이메일·닉네임·프로필을 꺼내
+회원을 찾거나 새로 만들고 우리 서비스의 accessToken을 발급합니다.
+
+```http
+POST /api/v1/auth/google
+Content-Type: application/json
+
+{"idToken": "eyJ..."}
+```
+```json
+{"status": 200, "message": "성공", "data": {
+  "accessToken": "eyJ...",
+  "isNewUser": true,
+  "member": {"id": 1, "email": "...", "nickname": "...", "profileImageUrl": "...", "provider": "GOOGLE", "role": "USER"}
+}}
 ```
 
+- `/api/v1/auth/google` 는 `AuthConfig.WHITELIST`에 등록돼 있어 토큰 없이 호출됩니다.
+- 검증은 `GoogleIdTokenParser`가 구글 `tokeninfo` 엔드포인트(`https://oauth2.googleapis.com/tokeninfo?id_token=`)를 호출해서 합니다.
+  서명·만료(`exp`)·발급자(`iss`)는 구글이 검사하고(유효하지 않으면 200이 아닌 응답), 서버는 `aud` == `GOOGLE_CLIENT_ID` 만 직접 확인합니다.
+- 로그인 1회당 구글로 HTTP GET 1회가 나갑니다. 구글은 이 엔드포인트를 디버깅용으로 안내하므로, 트래픽이 커지면
+  공개키(JWKS) 로컬 검증(`google-api-client` 등)으로 교체를 검토하세요.
+
+### 카카오 담당자에게
+
+토큰 발급 접점은 `AuthService.createAccessToken(Member)`입니다. `loginWithGoogle`과 같은 패턴으로
+`AuthService`에 메서드를, `AuthController`(`/api/v1/auth`)에 `POST /login/kakao`를 추가하세요.
+
 - `Member.role`은 생성자에서 `USER`로 자동 세팅됩니다. 빌더에 넣을 필요 없습니다.
-- 로그인 엔드포인트를 `/api/v1/auth/login/**` 아래에 두면 화이트리스트에 이미 있어 `AuthConfig`를 건드릴 필요가 없습니다. 다른 경로를 쓰면 `WHITELIST`에 한 줄 추가하세요.
-- `AuthController`(`/api/v1/auth`)에 로그인 메서드를 추가하면 됩니다. `MemberRepository`, `MemberService`는 이미 있으니 파일을 새로 만들지 말고 메서드만 추가하세요.
-- `TokenResponse`는 현재 `accessToken` 하나입니다. 응답에 `isNewUser`, `user` 같은 필드가 필요하면 별도 `LoginResponse`를 만드는 편이 깔끔합니다.
+- `MemberRepository`, `MemberService`는 이미 있으니 파일을 새로 만들지 말고 메서드만 추가하세요.
 
 ## 예외 인프라 담당자에게
 
@@ -135,9 +152,11 @@ return ResponseEntity.ok(ApiResponse.success(token));
 | `global/auth/LoginMemberArgumentResolver` | `@LoginMember` 값 주입 |
 | `global/config/AuthConfig` | 필터 등록, 화이트리스트, `JwtTokenProvider` 빈 |
 | `global/config/WebConfig` | 리졸버 등록 |
-| `domain/auth/service/AuthService` | `login(Member)`, `devLogin(email)` |
-| `domain/auth/controller/AuthController` | `GET /api/v1/auth/me` |
-| `domain/auth/controller/DevAuthController` | `POST /api/v1/auth/dev-login` (플래그 on일 때만) |
+| `domain/member/service/AuthService` | `loginWithGoogle(request)`, `createAccessToken(Member)`, `devLogin(email)` |
+| `domain/member/service/oauth/GoogleIdTokenParser` | 구글 `tokeninfo` 호출 → 토큰 검증 + email/name/picture 추출, `aud` 확인 |
+| `domain/member/service/oauth/GoogleProperties` | `google.client-id` 바인딩 (idToken `aud` 비교값) |
+| `domain/member/controller/AuthController` | `POST /api/v1/auth/google`, `GET /api/v1/auth/me` |
+| `domain/member/controller/DevAuthController` | `POST /api/v1/auth/dev-login` (플래그 on일 때만) |
 
 ## 테스트
 
@@ -151,5 +170,6 @@ return ResponseEntity.ok(ApiResponse.success(token));
 | `JwtAuthenticationFilterTest` | MockMvc. 401 세 가지 메시지, 정상 통과, 화이트리스트, `/api` 밖 경로 |
 | `AuthFlowTest` | dev-login → `/auth/me` 사이클, 회원 중복 생성 방지, validation |
 | `DevLoginDisabledTest` | 플래그 off면 dev-login 404 |
+| `GoogleLoginTest` | 구글 로그인: 신규 가입 + 토큰 발급, 기존 회원 재사용, validation (`GoogleIdTokenParser`는 `@MockitoBean`) |
 
 테스트는 `test` 프로필(`src/test/resources/application-test.yaml`)로 돌아가므로 `.env` 없이도 통과합니다.

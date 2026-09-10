@@ -24,3 +24,6 @@ jwt:
 auth:
   dev-login:
     enabled: ${DEV_LOGIN_ENABLED:false}
+
+google:
+  client-id: ${GOOGLE_CLIENT_ID}

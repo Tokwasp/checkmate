@@ -1,24 +1,30 @@
 package ssafy.checkmate.domain.member.service.oauth;
 
+import java.io.IOException;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
-import org.springframework.stereotype.Component;
-
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 
 @Component
 @RequiredArgsConstructor
 public class GoogleIdTokenParser {
 
-    private static final int PAYLOAD_SEGMENT_INDEX = 1;
-    private static final int MIN_JWT_SEGMENTS = 2;
+    private static final String TOKEN_INFO_URL = "https://oauth2.googleapis.com/tokeninfo?id_token=";
 
     private final ObjectMapper objectMapper;
+    private final GoogleProperties googleProperties;
+    private final HttpClient httpClient = HttpClient.newHttpClient();
 
     public GoogleUserInfo parse(String idToken) {
-        JsonNode claims = readClaims(decodePayload(idToken));
+        JsonNode claims = requestTokenInfo(idToken);
+        verifyAudience(claims);
         return new GoogleUserInfo(
                 claims.path("email").asString(null),
                 claims.path("name").asString(null),
@@ -26,24 +32,33 @@ public class GoogleIdTokenParser {
         );
     }
 
-    private String decodePayload(String idToken) {
-        String[] segments = idToken.split("\\.");
-        if (segments.length < MIN_JWT_SEGMENTS) {
+    private JsonNode requestTokenInfo(String idToken) {
+        HttpResponse<String> response = send(idToken);
+        if (response.statusCode() != 200) {
             throw new IllegalArgumentException("유효하지 않은 구글 ID 토큰입니다.");
         }
+        return objectMapper.readTree(response.body());
+    }
+
+    private HttpResponse<String> send(String idToken) {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(TOKEN_INFO_URL + URLEncoder.encode(idToken, StandardCharsets.UTF_8)))
+                .GET()
+                .build();
         try {
-            byte[] decoded = Base64.getUrlDecoder().decode(segments[PAYLOAD_SEGMENT_INDEX]);
-            return new String(decoded, StandardCharsets.UTF_8);
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("유효하지 않은 구글 ID 토큰입니다.", e);
+            return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        } catch (IOException e) {
+            throw new IllegalStateException("구글 토큰 검증 요청에 실패했습니다.", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("구글 토큰 검증이 중단되었습니다.", e);
         }
     }
 
-    private JsonNode readClaims(String payloadJson) {
-        try {
-            return objectMapper.readTree(payloadJson);
-        } catch (Exception e) {
-            throw new IllegalArgumentException("유효하지 않은 구글 ID 토큰입니다.", e);
+    private void verifyAudience(JsonNode claims) {
+        String audience = claims.path("aud").asString(null);
+        if (!googleProperties.clientId().equals(audience)) {
+            throw new IllegalArgumentException("우리 앱을 위해 발급된 구글 ID 토큰이 아닙니다.");
         }
     }
 }

@@ -1,4 +1,4 @@
-package ssafy.checkmate.domain.member.dto;
+package ssafy.checkmate.domain.member.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
 import lombok.AccessLevel;
