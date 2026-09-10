@@ -1,4 +1,4 @@
-package ssafy.checkmate.domain.auth;
+package ssafy.checkmate.domain.member;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
