@@ -1,0 +1,124 @@
+package ssafy.checkmate.domain.weather;
+
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
+
+@Slf4j
+@Component
+public class OpenMeteoWeatherClient implements WeatherClient {
+
+    private static final int MAX_FORECAST_DAYS = 16;
+
+    private final RestClient restClient;
+
+    public OpenMeteoWeatherClient(@Qualifier("openMeteoForecastRestClient") RestClient restClient) {
+        this.restClient = restClient;
+    }
+
+    @Override
+    public List<DailyWeather> getForecast(Double latitude, Double longitude, LocalDate startDate, LocalDate endDate) {
+        LocalDate today = LocalDate.now();
+        LocalDate maxDate = today.plusDays(MAX_FORECAST_DAYS - 1);
+        // 미래 예보만 다룬다 — 여행 기간에 이미 지난 날짜가 섞여 있어도 과거분은 조회하지 않는다.
+        LocalDate effectiveStartDate = startDate.isBefore(today) ? today : startDate;
+        if (effectiveStartDate.isAfter(maxDate) || effectiveStartDate.isAfter(endDate)) {
+            return List.of();
+        }
+        LocalDate clampedEndDate = endDate.isAfter(maxDate) ? maxDate : endDate;
+
+        try {
+            ForecastResponse response = restClient.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/v1/forecast")
+                            .queryParam("latitude", latitude)
+                            .queryParam("longitude", longitude)
+                            .queryParam("daily", "weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max")
+                            .queryParam("timezone", "auto")
+                            .queryParam("start_date", effectiveStartDate)
+                            .queryParam("end_date", clampedEndDate)
+                            .build())
+                    .retrieve()
+                    .body(ForecastResponse.class);
+
+            if (response == null || response.getDaily() == null) {
+                return List.of();
+            }
+            return toDailyWeathers(response.getDaily());
+        } catch (RestClientException e) {
+            log.warn("open-meteo forecast failed", e);
+            return List.of();
+        }
+    }
+
+    private static List<DailyWeather> toDailyWeathers(ForecastResponse.Daily daily) {
+        List<DailyWeather> weathers = new ArrayList<>();
+        List<String> time = daily.getTime();
+        for (int i = 0; i < time.size(); i++) {
+            weathers.add(new DailyWeather(
+                    LocalDate.parse(time.get(i)),
+                    toWeatherType(daily.getWeathercode().get(i)),
+                    daily.getTemperature2mMin().get(i),
+                    daily.getTemperature2mMax().get(i),
+                    daily.getPrecipitationProbabilityMax().get(i)));
+        }
+        return weathers;
+    }
+
+    private static WeatherType toWeatherType(int code) {
+        if (isSnow(code)) {
+            return WeatherType.SNOWY;
+        }
+        if (isRain(code)) {
+            return WeatherType.RAINY;
+        }
+        if (code == 3 || code == 45 || code == 48) {
+            return WeatherType.OVERCAST;
+        }
+        if (code == 1 || code == 2) {
+            return WeatherType.CLOUDY;
+        }
+        return WeatherType.SUNNY;
+    }
+
+    private static boolean isRain(int code) {
+        return (code >= 51 && code <= 67) || (code >= 80 && code <= 82) || (code >= 95 && code <= 99);
+    }
+
+    private static boolean isSnow(int code) {
+        return (code >= 71 && code <= 77) || code == 85 || code == 86;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    static class ForecastResponse {
+        private Daily daily;
+
+        @Getter
+        @Setter
+        @NoArgsConstructor
+        static class Daily {
+            private List<String> time;
+            private List<Integer> weathercode;
+
+            @JsonProperty("temperature_2m_max")
+            private List<Double> temperature2mMax;
+
+            @JsonProperty("temperature_2m_min")
+            private List<Double> temperature2mMin;
+
+            @JsonProperty("precipitation_probability_max")
+            private List<Integer> precipitationProbabilityMax;
+        }
+    }
+}

@@ -1,0 +1,17 @@
+jwt:
+  secret: test-secret-key-for-jwt-unit-and-integration-tests-0123456789abcdef
+  access-token-expiration: 1d
+
+auth:
+  dev-login:
+    enabled: true
+
+google:
+  client-id: test-google-client-id
+  places:
+    api-key: test-google-places-key
+
+gms:
+  base-url: http://localhost:0
+  api-key: test-gms-key
+  model: test-model
