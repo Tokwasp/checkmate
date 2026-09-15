@@ -8,11 +8,6 @@ import org.springframework.web.client.RestClient;
 public class WeatherClientConfig {
 
     @Bean
-    public RestClient openMeteoGeocodingRestClient() {
-        return RestClient.builder().baseUrl("https://geocoding-api.open-meteo.com").build();
-    }
-
-    @Bean
     public RestClient openMeteoForecastRestClient() {
         return RestClient.builder().baseUrl("https://api.open-meteo.com").build();
     }

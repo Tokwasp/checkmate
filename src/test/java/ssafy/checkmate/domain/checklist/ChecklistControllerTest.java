@@ -1,7 +1,7 @@
 package ssafy.checkmate.domain.checklist;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -67,7 +67,7 @@ class ChecklistControllerTest {
     @DisplayName("체크리스트 추천을 생성한다")
     void recommend() throws Exception {
         Trip trip = createTrip(1L);
-        given(weatherClient.getForecast(anyString(), any(), any())).willReturn(List.of());
+        given(weatherClient.getForecast(anyDouble(), anyDouble(), any(), any())).willReturn(List.of());
         given(recommendationEngine.recommend(any(), any())).willReturn(List.of(new RecommendedItem("여권", "서류", 1)));
 
         mockMvc.perform(post("/api/v1/trips/{tripId}/checklists/recommend", trip.getId())
@@ -85,7 +85,7 @@ class ChecklistControllerTest {
         Trip trip = createTrip(1L);
         Bag defaultBag = bagRepository.save(Bag.createDefault(trip.getId(), 1L));
         bagItemRepository.save(BagItem.create(trip.getId(), 1L, "여권", "서류", 1, defaultBag.getId()));
-        given(weatherClient.getForecast(anyString(), any(), any())).willReturn(List.of());
+        given(weatherClient.getForecast(anyDouble(), anyDouble(), any(), any())).willReturn(List.of());
 
         mockMvc.perform(get("/api/v1/trips/{tripId}/checklists", trip.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(1L)))
@@ -189,6 +189,8 @@ class ChecklistControllerTest {
                 .startDate(LocalDate.now().plusDays(1))
                 .endDate(LocalDate.now().plusDays(3))
                 .purposes(List.of("휴가"))
+                .latitude(34.6937)
+                .longitude(135.5023)
                 .build());
     }
 

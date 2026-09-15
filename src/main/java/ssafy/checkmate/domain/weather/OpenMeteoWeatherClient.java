@@ -12,8 +12,6 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
-import ssafy.checkmate.domain.weather.geocoding.GeocodingResult;
-import ssafy.checkmate.domain.weather.geocoding.OpenMeteoGeocodingClient;
 
 @Slf4j
 @Component
@@ -21,39 +19,30 @@ public class OpenMeteoWeatherClient implements WeatherClient {
 
     private static final int MAX_FORECAST_DAYS = 16;
 
-    private final OpenMeteoGeocodingClient geocodingClient;
     private final RestClient restClient;
 
-    public OpenMeteoWeatherClient(OpenMeteoGeocodingClient geocodingClient,
-                                   @Qualifier("openMeteoForecastRestClient") RestClient restClient) {
-        this.geocodingClient = geocodingClient;
+    public OpenMeteoWeatherClient(@Qualifier("openMeteoForecastRestClient") RestClient restClient) {
         this.restClient = restClient;
     }
 
     @Override
-    public List<DailyWeather> getForecast(String destination, LocalDate startDate, LocalDate endDate) {
+    public List<DailyWeather> getForecast(Double latitude, Double longitude, LocalDate startDate, LocalDate endDate) {
         LocalDate maxDate = LocalDate.now().plusDays(MAX_FORECAST_DAYS - 1);
         if (startDate.isAfter(maxDate)) {
             return List.of();
         }
         LocalDate clampedEndDate = endDate.isAfter(maxDate) ? maxDate : endDate;
 
-        return geocodingClient.resolve(destination)
-                .map(coordinate -> fetchForecast(coordinate, startDate, clampedEndDate))
-                .orElseGet(List::of);
-    }
-
-    private List<DailyWeather> fetchForecast(GeocodingResult coordinate, LocalDate startDate, LocalDate endDate) {
         try {
             ForecastResponse response = restClient.get()
                     .uri(uriBuilder -> uriBuilder
                             .path("/v1/forecast")
-                            .queryParam("latitude", coordinate.getLatitude())
-                            .queryParam("longitude", coordinate.getLongitude())
+                            .queryParam("latitude", latitude)
+                            .queryParam("longitude", longitude)
                             .queryParam("daily", "weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max")
                             .queryParam("timezone", "auto")
                             .queryParam("start_date", startDate)
-                            .queryParam("end_date", endDate)
+                            .queryParam("end_date", clampedEndDate)
                             .build())
                     .retrieve()
                     .body(ForecastResponse.class);

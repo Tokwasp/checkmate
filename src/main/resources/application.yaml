@@ -27,6 +27,8 @@ auth:
 
 google:
   client-id: ${GOOGLE_CLIENT_ID}
+  places:
+    api-key: ${GOOGLE_PLACES_KEY}
 
 gms:
   base-url: ${GMS_BASE_URL}

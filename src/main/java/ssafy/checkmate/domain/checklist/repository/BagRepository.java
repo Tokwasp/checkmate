@@ -8,4 +8,6 @@ import ssafy.checkmate.domain.checklist.entity.BagType;
 public interface BagRepository extends JpaRepository<Bag, Long> {
 
     Optional<Bag> findByTripIdAndType(Long tripId, BagType type);
+
+    void deleteAllByTripId(Long tripId);
 }

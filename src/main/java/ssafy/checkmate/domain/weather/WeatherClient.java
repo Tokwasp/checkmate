@@ -5,5 +5,5 @@ import java.util.List;
 
 public interface WeatherClient {
 
-    List<DailyWeather> getForecast(String destination, LocalDate startDate, LocalDate endDate);
+    List<DailyWeather> getForecast(Double latitude, Double longitude, LocalDate startDate, LocalDate endDate);
 }

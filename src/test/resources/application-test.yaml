@@ -8,6 +8,8 @@ auth:
 
 google:
   client-id: test-google-client-id
+  places:
+    api-key: test-google-places-key
 
 gms:
   base-url: http://localhost:0

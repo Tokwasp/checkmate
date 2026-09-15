@@ -48,7 +48,8 @@ public class ChecklistService {
     public ChecklistItemsResponse recommend(Long tripId, Long memberId) {
         Trip trip = findTripOwnedBy(tripId, memberId, "본인의 여행만 조회할 수 있습니다.");
 
-        List<DailyWeather> forecast = weatherClient.getForecast(trip.getDestination(), trip.getStartDate(), trip.getEndDate());
+        List<DailyWeather> forecast = weatherClient.getForecast(
+                trip.getLatitude(), trip.getLongitude(), trip.getStartDate(), trip.getEndDate());
         List<RecommendedItem> recommended = recommendationEngine.recommend(trip, forecast);
         Bag defaultBag = bagService.ensureDefaultBag(tripId, memberId);
 
@@ -67,7 +68,7 @@ public class ChecklistService {
         Trip trip = findTripOwnedBy(tripId, memberId, "본인의 여행만 조회할 수 있습니다.");
 
         List<WeatherResponse> weathers = weatherClient
-                .getForecast(trip.getDestination(), trip.getStartDate(), trip.getEndDate())
+                .getForecast(trip.getLatitude(), trip.getLongitude(), trip.getStartDate(), trip.getEndDate())
                 .stream()
                 .map(WeatherResponse::of)
                 .toList();

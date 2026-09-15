@@ -3,7 +3,7 @@ package ssafy.checkmate.domain.checklist;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.BDDMockito.given;
 import static ssafy.checkmate.domain.checklist.TestRequestFactory.checklistItemCreateRequest;
 import static ssafy.checkmate.domain.checklist.TestRequestFactory.checklistItemUpdateRequest;
@@ -67,7 +67,7 @@ class ChecklistServiceTest {
     void recommend() {
         // given
         Trip trip = createTrip(1L);
-        given(weatherClient.getForecast(anyString(), any(), any())).willReturn(List.of(
+        given(weatherClient.getForecast(anyDouble(), anyDouble(), any(), any())).willReturn(List.of(
                 new DailyWeather(trip.getStartDate(), WeatherType.RAINY, 14.0, 18.0, 80)));
         given(recommendationEngine.recommend(any(), any())).willReturn(List.of(
                 new RecommendedItem("여권", "서류", 1),
@@ -113,7 +113,7 @@ class ChecklistServiceTest {
         Bag carrier = bagRepository.save(Bag.create(trip.getId(), 1L, "내 캐리어"));
         bagItemRepository.save(BagItem.create(trip.getId(), 1L, "여권", "서류", 1, defaultBag.getId()));
         bagItemRepository.save(BagItem.create(trip.getId(), 1L, "우산", "생활용품", 1, carrier.getId()));
-        given(weatherClient.getForecast(anyString(), any(), any())).willReturn(List.of(
+        given(weatherClient.getForecast(anyDouble(), anyDouble(), any(), any())).willReturn(List.of(
                 new DailyWeather(trip.getStartDate(), WeatherType.SUNNY, 12.0, 21.0, 10)));
 
         // when
@@ -260,6 +260,8 @@ class ChecklistServiceTest {
                 .startDate(LocalDate.now().plusDays(1))
                 .endDate(LocalDate.now().plusDays(3))
                 .purposes(List.of("휴가"))
+                .latitude(34.6937)
+                .longitude(135.5023)
                 .build());
     }
 }

@@ -9,4 +9,8 @@ public interface BagItemRepository extends JpaRepository<BagItem, Long> {
     List<BagItem> findAllByTripId(Long tripId);
 
     List<BagItem> findAllByBagId(Long bagId);
+
+    long countByTripId(Long tripId);
+
+    void deleteAllByTripId(Long tripId);
 }

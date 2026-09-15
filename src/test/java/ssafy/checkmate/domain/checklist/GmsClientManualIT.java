@@ -74,9 +74,11 @@ class GmsClientManualIT {
     }
 
     /**
-     * 날씨도 목만들지 않고 실제 Open-Meteo 지오코딩·예보를 그대로 태워서, GMS까지
-     * 진짜로 돌아가는 전체 파이프라인을 확인한다. "대구"처럼 한글 국내 지명이
-     * Open-Meteo 지오코딩에서 실제로 잘 잡히는지도 이 테스트로 같이 확인된다(docs.md §9-2).
+     * 날씨도 목만들지 않고 실제 Open-Meteo 예보를 그대로 태워서, GMS까지 진짜로 돌아가는
+     * 전체 파이프라인을 확인한다. 지오코딩은 더 이상 쓰지 않는다 — "대구"를 이름으로
+     * 검색하면 북한 강원도 마을이 잡히는 문제(옛 docs/checklist/docs.md §9-2)가 있었고,
+     * 이는 Google Places로 좌표를 미리 확보해 저장하는 방식으로 근본적으로 해결했다
+     * (docs/travel/docs.md §9-7/§10). 그래서 이 테스트도 좌표를 직접 넣는다.
      */
     @Test
     void recommendForDaeguUsingRealWeather() {
@@ -86,10 +88,12 @@ class GmsClientManualIT {
                 .startDate(LocalDate.now().plusDays(1))
                 .endDate(LocalDate.now().plusDays(4))
                 .purposes(List.of("맛집 탐방"))
+                .latitude(35.87028)
+                .longitude(128.59111)
                 .build();
 
         List<DailyWeather> forecast = weatherClient.getForecast(
-                trip.getDestination(), trip.getStartDate(), trip.getEndDate());
+                trip.getLatitude(), trip.getLongitude(), trip.getStartDate(), trip.getEndDate());
 
         System.out.println("[대구 날씨 예보 — Open-Meteo 실제 응답]");
         forecast.forEach(day -> System.out.println(
