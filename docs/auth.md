@@ -1,6 +1,6 @@
 # JWT 인증 가이드
 
-Spring Security 없이 서블릿 필터로 구현한 JWT 인증입니다. Access Token 하나만 사용하고(만료 1일), Refresh Token과 서버 측 로그아웃은 없습니다.
+Spring Security 없이 서블릿 필터로 구현한 JWT 인증입니다. Access Token 하나만 사용하고(만료 30일), Refresh Token과 서버 측 로그아웃은 없습니다.
 
 ## 요청 흐름
 
