@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import ssafy.checkmate.domain.trip.dto.request.TripCreateRequest;
 import ssafy.checkmate.domain.trip.dto.response.PackingProgressResponse;
+import ssafy.checkmate.domain.trip.dto.response.PlaceDetailResponse;
 import ssafy.checkmate.domain.trip.dto.response.PlaceSuggestionResponse;
 import ssafy.checkmate.domain.trip.dto.response.TripCreateResponse;
 import ssafy.checkmate.domain.trip.dto.response.TripListResponse;
@@ -34,6 +35,13 @@ public class TripController {
             @LoginMember MemberPrincipal principal,
             @RequestParam String query, @RequestParam String sessionToken) {
         return ResponseEntity.ok(ApiResponse.success(tripService.autocompleteDestination(query, sessionToken)));
+    }
+
+    @GetMapping("/api/v1/trips/destinations/details")
+    public ResponseEntity<ApiResponse<PlaceDetailResponse>> destinationDetails(
+            @LoginMember MemberPrincipal principal,
+            @RequestParam String placeId, @RequestParam String sessionToken) {
+        return ResponseEntity.ok(ApiResponse.success(tripService.getDestinationDetails(placeId, sessionToken)));
     }
 
     @PostMapping("/api/v1/trips")

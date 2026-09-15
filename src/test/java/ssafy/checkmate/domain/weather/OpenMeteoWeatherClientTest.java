@@ -26,26 +26,27 @@ class OpenMeteoWeatherClientTest {
         // given
         RestClient.Builder builder = RestClient.builder().baseUrl(BASE_URL);
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        LocalDate day1 = LocalDate.now().plusDays(1);
+        LocalDate day2 = LocalDate.now().plusDays(2);
         server.expect(requestTo(Matchers.containsString("/v1/forecast")))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess("""
                         {"daily":{
-                          "time":["2026-04-01","2026-04-02"],
+                          "time":["%s","%s"],
                           "weathercode":[0,61],
                           "temperature_2m_max":[21.0,18.6],
                           "temperature_2m_min":[12.4,14.1],
                           "precipitation_probability_max":[10,80]
                         }}
-                        """, MediaType.APPLICATION_JSON));
+                        """.formatted(day1, day2), MediaType.APPLICATION_JSON));
         OpenMeteoWeatherClient client = new OpenMeteoWeatherClient(builder.build());
 
         // when
-        List<DailyWeather> forecast = client.getForecast(34.6937, 135.5023,
-                LocalDate.of(2026, 4, 1), LocalDate.of(2026, 4, 2));
+        List<DailyWeather> forecast = client.getForecast(34.6937, 135.5023, day1, day2);
 
         // then
         assertThat(forecast).hasSize(2);
-        assertThat(forecast.get(0).getDate()).isEqualTo(LocalDate.of(2026, 4, 1));
+        assertThat(forecast.get(0).getDate()).isEqualTo(day1);
         assertThat(forecast.get(0).getWeatherType()).isEqualTo(WeatherType.SUNNY);
         assertThat(forecast.get(0).getMaxTemperature()).isEqualTo(21.0);
         assertThat(forecast.get(0).getMinTemperature()).isEqualTo(12.4);
@@ -66,6 +67,36 @@ class OpenMeteoWeatherClientTest {
 
         // then
         assertThat(forecast).isEmpty();
+    }
+
+    @Test
+    @DisplayName("여행 시작일이 과거여도 오늘부터의 미래 날짜만 조회한다")
+    void getForecastClampsPastStartDateToToday() {
+        // given
+        RestClient.Builder builder = RestClient.builder().baseUrl(BASE_URL);
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        LocalDate today = LocalDate.now();
+        server.expect(requestTo(Matchers.allOf(
+                        Matchers.containsString("/v1/forecast"),
+                        Matchers.containsString("start_date=" + today))))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"daily":{
+                          "time":["%s"],
+                          "weathercode":[0],
+                          "temperature_2m_max":[21.0],
+                          "temperature_2m_min":[12.4],
+                          "precipitation_probability_max":[10]
+                        }}
+                        """.formatted(today), MediaType.APPLICATION_JSON));
+        OpenMeteoWeatherClient client = new OpenMeteoWeatherClient(builder.build());
+
+        // when
+        List<DailyWeather> forecast = client.getForecast(34.6937, 135.5023, today.minusDays(5), today.plusDays(2));
+
+        // then
+        assertThat(forecast).hasSize(1);
+        assertThat(forecast.get(0).getDate()).isEqualTo(today);
     }
 
     @Test

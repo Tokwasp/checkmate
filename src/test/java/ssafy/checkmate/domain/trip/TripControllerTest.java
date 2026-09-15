@@ -76,6 +76,38 @@ class TripControllerTest {
     }
 
     @Test
+    @DisplayName("목적지 상세를 조회하면 200과 이름·좌표를 응답한다")
+    void destinationDetails() throws Exception {
+        given(googlePlacesClient.getDetails("place-1", "session-1"))
+                .willReturn(new PlaceDetails("도쿄", 35.6895, 139.69171));
+
+        mockMvc.perform(get("/api/v1/trips/destinations/details")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L))
+                        .param("placeId", "place-1")
+                        .param("sessionToken", "session-1"))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.destination").value("도쿄"))
+                .andExpect(jsonPath("$.data.latitude").value(35.6895))
+                .andExpect(jsonPath("$.data.longitude").value(139.69171));
+    }
+
+    @Test
+    @DisplayName("유효하지 않은 placeId로 목적지 상세를 조회하면 400을 응답한다")
+    void destinationDetailsWithInvalidPlace() throws Exception {
+        given(googlePlacesClient.getDetails("invalid-place", "session-1"))
+                .willThrow(new TripInvalidDestinationException());
+
+        mockMvc.perform(get("/api/v1/trips/destinations/details")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L))
+                        .param("placeId", "invalid-place")
+                        .param("sessionToken", "session-1"))
+                .andDo(print())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("유효하지 않은 목적지입니다."));
+    }
+
+    @Test
     @DisplayName("여행을 생성하면 200과 여행 ID, 기본 가방 ID를 응답한다")
     void createTrip() throws Exception {
         given(googlePlacesClient.getDetails("place-1", "session-1"))

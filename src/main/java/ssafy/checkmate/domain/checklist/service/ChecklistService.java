@@ -30,7 +30,8 @@ import ssafy.checkmate.domain.trip.exception.TripAccessDeniedException;
 import ssafy.checkmate.domain.trip.exception.TripNotFoundException;
 import ssafy.checkmate.domain.trip.repository.TripRepository;
 import ssafy.checkmate.domain.weather.DailyWeather;
-import ssafy.checkmate.domain.weather.WeatherClient;
+import ssafy.checkmate.domain.weather.entity.TripWeather;
+import ssafy.checkmate.domain.weather.repository.TripWeatherRepository;
 
 @Service
 @RequiredArgsConstructor
@@ -41,15 +42,14 @@ public class ChecklistService {
     private final BagRepository bagRepository;
     private final TripRepository tripRepository;
     private final BagService bagService;
-    private final WeatherClient weatherClient;
+    private final TripWeatherRepository tripWeatherRepository;
     private final ChecklistRecommendationEngine recommendationEngine;
 
     @Transactional
     public ChecklistItemsResponse recommend(Long tripId, Long memberId) {
         Trip trip = findTripOwnedBy(tripId, memberId, "본인의 여행만 조회할 수 있습니다.");
 
-        List<DailyWeather> forecast = weatherClient.getForecast(
-                trip.getLatitude(), trip.getLongitude(), trip.getStartDate(), trip.getEndDate());
+        List<DailyWeather> forecast = findForecast(tripId);
         List<RecommendedItem> recommended = recommendationEngine.recommend(trip, forecast);
         Bag defaultBag = bagService.ensureDefaultBag(tripId, memberId);
 
@@ -67,9 +67,7 @@ public class ChecklistService {
     public ChecklistResponse getChecklist(Long tripId, Long memberId) {
         Trip trip = findTripOwnedBy(tripId, memberId, "본인의 여행만 조회할 수 있습니다.");
 
-        List<WeatherResponse> weathers = weatherClient
-                .getForecast(trip.getLatitude(), trip.getLongitude(), trip.getStartDate(), trip.getEndDate())
-                .stream()
+        List<WeatherResponse> weathers = findForecast(tripId).stream()
                 .map(WeatherResponse::of)
                 .toList();
 
@@ -144,6 +142,12 @@ public class ChecklistService {
         }
         // 인벤토리 사진 삭제는 no-op(image_url이 애초에 항상 null, docs.md §0/§2-1-1, 별도 티켓)
         bagItemRepository.delete(item);
+    }
+
+    private List<DailyWeather> findForecast(Long tripId) {
+        return tripWeatherRepository.findAllByTripIdOrderByDateAsc(tripId).stream()
+                .map(TripWeather::toDailyWeather)
+                .toList();
     }
 
     private Trip findTripOwnedBy(Long tripId, Long memberId, String accessDeniedMessage) {

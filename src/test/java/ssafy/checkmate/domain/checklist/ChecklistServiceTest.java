@@ -3,7 +3,6 @@ package ssafy.checkmate.domain.checklist;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.BDDMockito.given;
 import static ssafy.checkmate.domain.checklist.TestRequestFactory.checklistItemCreateRequest;
 import static ssafy.checkmate.domain.checklist.TestRequestFactory.checklistItemUpdateRequest;
@@ -36,8 +35,9 @@ import ssafy.checkmate.domain.trip.exception.TripAccessDeniedException;
 import ssafy.checkmate.domain.trip.exception.TripNotFoundException;
 import ssafy.checkmate.domain.trip.repository.TripRepository;
 import ssafy.checkmate.domain.weather.DailyWeather;
-import ssafy.checkmate.domain.weather.WeatherClient;
 import ssafy.checkmate.domain.weather.WeatherType;
+import ssafy.checkmate.domain.weather.entity.TripWeather;
+import ssafy.checkmate.domain.weather.repository.TripWeatherRepository;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -56,8 +56,8 @@ class ChecklistServiceTest {
     @Autowired
     private TripRepository tripRepository;
 
-    @MockitoBean
-    private WeatherClient weatherClient;
+    @Autowired
+    private TripWeatherRepository tripWeatherRepository;
 
     @MockitoBean
     private ChecklistRecommendationEngine recommendationEngine;
@@ -67,7 +67,7 @@ class ChecklistServiceTest {
     void recommend() {
         // given
         Trip trip = createTrip(1L);
-        given(weatherClient.getForecast(anyDouble(), anyDouble(), any(), any())).willReturn(List.of(
+        tripWeatherRepository.save(TripWeather.of(trip.getId(),
                 new DailyWeather(trip.getStartDate(), WeatherType.RAINY, 14.0, 18.0, 80)));
         given(recommendationEngine.recommend(any(), any())).willReturn(List.of(
                 new RecommendedItem("여권", "서류", 1),
@@ -113,7 +113,7 @@ class ChecklistServiceTest {
         Bag carrier = bagRepository.save(Bag.create(trip.getId(), 1L, "내 캐리어"));
         bagItemRepository.save(BagItem.create(trip.getId(), 1L, "여권", "서류", 1, defaultBag.getId()));
         bagItemRepository.save(BagItem.create(trip.getId(), 1L, "우산", "생활용품", 1, carrier.getId()));
-        given(weatherClient.getForecast(anyDouble(), anyDouble(), any(), any())).willReturn(List.of(
+        tripWeatherRepository.save(TripWeather.of(trip.getId(),
                 new DailyWeather(trip.getStartDate(), WeatherType.SUNNY, 12.0, 21.0, 10)));
 
         // when

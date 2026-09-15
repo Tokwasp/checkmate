@@ -3,6 +3,8 @@ package ssafy.checkmate.domain.trip;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.BDDMockito.given;
 import static ssafy.checkmate.domain.trip.TestRequestFactory.tripCreateRequest;
 
@@ -21,6 +23,7 @@ import ssafy.checkmate.domain.checklist.repository.BagItemRepository;
 import ssafy.checkmate.domain.checklist.repository.BagRepository;
 import ssafy.checkmate.domain.trip.dto.request.TripCreateRequest;
 import ssafy.checkmate.domain.trip.dto.response.PackingProgressResponse;
+import ssafy.checkmate.domain.trip.dto.response.PlaceDetailResponse;
 import ssafy.checkmate.domain.trip.dto.response.PlaceSuggestionResponse;
 import ssafy.checkmate.domain.trip.dto.response.TripCreateResponse;
 import ssafy.checkmate.domain.trip.dto.response.TripListResponse;
@@ -35,6 +38,11 @@ import ssafy.checkmate.domain.trip.place.PlaceDetails;
 import ssafy.checkmate.domain.trip.place.PlaceSuggestion;
 import ssafy.checkmate.domain.trip.repository.TripRepository;
 import ssafy.checkmate.domain.trip.service.TripService;
+import ssafy.checkmate.domain.weather.DailyWeather;
+import ssafy.checkmate.domain.weather.WeatherClient;
+import ssafy.checkmate.domain.weather.WeatherType;
+import ssafy.checkmate.domain.weather.entity.TripWeather;
+import ssafy.checkmate.domain.weather.repository.TripWeatherRepository;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -53,8 +61,14 @@ class TripServiceTest {
     @Autowired
     private BagItemRepository bagItemRepository;
 
+    @Autowired
+    private TripWeatherRepository tripWeatherRepository;
+
     @MockitoBean
     private GooglePlacesClient googlePlacesClient;
+
+    @MockitoBean
+    private WeatherClient weatherClient;
 
     @Test
     @DisplayName("목적지를 검색하면 관련도 높은 순 후보 목록을 반환한다")
@@ -73,6 +87,35 @@ class TripServiceTest {
                 .containsExactly(
                         tuple("place-1", "도쿄, 일본"),
                         tuple("place-2", "도쿄도, 일본"));
+    }
+
+    @Test
+    @DisplayName("목적지 상세를 조회하면 이름과 좌표를 반환한다")
+    void getDestinationDetails() {
+        // given
+        given(googlePlacesClient.getDetails("place-1", "session-1"))
+                .willReturn(new PlaceDetails("도쿄", 35.6895, 139.69171));
+
+        // when
+        PlaceDetailResponse response = tripService.getDestinationDetails("place-1", "session-1");
+
+        // then
+        assertThat(response.getDestination()).isEqualTo("도쿄");
+        assertThat(response.getLatitude()).isEqualTo(35.6895);
+        assertThat(response.getLongitude()).isEqualTo(139.69171);
+    }
+
+    @Test
+    @DisplayName("유효하지 않은 placeId로 목적지 상세를 조회하면 예외가 발생한다")
+    void getDestinationDetailsWithInvalidPlace() {
+        // given
+        given(googlePlacesClient.getDetails("invalid-place", "session-1"))
+                .willThrow(new TripInvalidDestinationException());
+
+        // when // then
+        assertThatThrownBy(() -> tripService.getDestinationDetails("invalid-place", "session-1"))
+                .isInstanceOf(TripInvalidDestinationException.class)
+                .hasMessage("유효하지 않은 목적지입니다.");
     }
 
     @Test
@@ -101,6 +144,31 @@ class TripServiceTest {
 
         Bag defaultBag = bagRepository.findById(response.getDefaultBagId()).orElseThrow();
         assertThat(defaultBag.isDefault()).isTrue();
+    }
+
+    @Test
+    @DisplayName("여행을 생성하면 16일 이내 예보 날씨가 함께 저장된다")
+    void createTripSavesWeatherForecast() {
+        // given
+        given(googlePlacesClient.getDetails("place-1", "session-1"))
+                .willReturn(new PlaceDetails("도쿄", 35.6895, 139.69171));
+        LocalDate startDate = LocalDate.now().plusDays(1);
+        LocalDate endDate = LocalDate.now().plusDays(3);
+        given(weatherClient.getForecast(anyDouble(), anyDouble(), any(), any())).willReturn(List.of(
+                new DailyWeather(startDate, WeatherType.RAINY, 14.0, 18.0, 80)));
+        TripCreateRequest request = tripCreateRequest("place-1", "session-1", startDate, endDate, List.of("관광"));
+
+        // when
+        TripCreateResponse response = tripService.createTrip(1L, request);
+
+        // then
+        List<TripWeather> savedWeathers = tripWeatherRepository.findAllByTripIdOrderByDateAsc(response.getTripId());
+        assertThat(savedWeathers).hasSize(1);
+        assertThat(savedWeathers.get(0).getDate()).isEqualTo(startDate);
+        assertThat(savedWeathers.get(0).getWeatherType()).isEqualTo(WeatherType.RAINY);
+        assertThat(savedWeathers.get(0).getMinTemperature()).isEqualTo(14.0);
+        assertThat(savedWeathers.get(0).getMaxTemperature()).isEqualTo(18.0);
+        assertThat(savedWeathers.get(0).getPrecipitationProbability()).isEqualTo(80);
     }
 
     @Test
@@ -260,12 +328,14 @@ class TripServiceTest {
     }
 
     @Test
-    @DisplayName("여행을 삭제하면 속한 가방과 체크리스트 항목도 함께 삭제된다")
+    @DisplayName("여행을 삭제하면 속한 가방과 체크리스트 항목, 날씨 데이터도 함께 삭제된다")
     void deleteTrip() {
         // given
         Trip trip = createTrip(1L, LocalDate.now().plusDays(1), LocalDate.now().plusDays(3));
         Bag bag = bagRepository.save(Bag.create(trip.getId(), 1L, "내 캐리어"));
         BagItem item = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "여권", "서류", 1, bag.getId()));
+        TripWeather weather = tripWeatherRepository.save(
+                TripWeather.of(trip.getId(), new DailyWeather(trip.getStartDate(), WeatherType.SUNNY, 12.0, 20.0, 10)));
 
         // when
         tripService.deleteTrip(trip.getId(), 1L);
@@ -274,6 +344,7 @@ class TripServiceTest {
         assertThat(tripRepository.findById(trip.getId())).isEmpty();
         assertThat(bagRepository.findById(bag.getId())).isEmpty();
         assertThat(bagItemRepository.findById(item.getId())).isEmpty();
+        assertThat(tripWeatherRepository.findById(weather.getId())).isEmpty();
     }
 
     @Test

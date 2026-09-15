@@ -27,8 +27,11 @@ public class OpenMeteoWeatherClient implements WeatherClient {
 
     @Override
     public List<DailyWeather> getForecast(Double latitude, Double longitude, LocalDate startDate, LocalDate endDate) {
-        LocalDate maxDate = LocalDate.now().plusDays(MAX_FORECAST_DAYS - 1);
-        if (startDate.isAfter(maxDate)) {
+        LocalDate today = LocalDate.now();
+        LocalDate maxDate = today.plusDays(MAX_FORECAST_DAYS - 1);
+        // 미래 예보만 다룬다 — 여행 기간에 이미 지난 날짜가 섞여 있어도 과거분은 조회하지 않는다.
+        LocalDate effectiveStartDate = startDate.isBefore(today) ? today : startDate;
+        if (effectiveStartDate.isAfter(maxDate) || effectiveStartDate.isAfter(endDate)) {
             return List.of();
         }
         LocalDate clampedEndDate = endDate.isAfter(maxDate) ? maxDate : endDate;
@@ -41,7 +44,7 @@ public class OpenMeteoWeatherClient implements WeatherClient {
                             .queryParam("longitude", longitude)
                             .queryParam("daily", "weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max")
                             .queryParam("timezone", "auto")
-                            .queryParam("start_date", startDate)
+                            .queryParam("start_date", effectiveStartDate)
                             .queryParam("end_date", clampedEndDate)
                             .build())
                     .retrieve()

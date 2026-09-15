@@ -14,6 +14,7 @@ import ssafy.checkmate.domain.checklist.repository.BagRepository;
 import ssafy.checkmate.domain.checklist.service.BagService;
 import ssafy.checkmate.domain.trip.dto.request.TripCreateRequest;
 import ssafy.checkmate.domain.trip.dto.response.PackingProgressResponse;
+import ssafy.checkmate.domain.trip.dto.response.PlaceDetailResponse;
 import ssafy.checkmate.domain.trip.dto.response.PlaceSuggestionResponse;
 import ssafy.checkmate.domain.trip.dto.response.TripCreateResponse;
 import ssafy.checkmate.domain.trip.dto.response.TripListResponse;
@@ -25,6 +26,10 @@ import ssafy.checkmate.domain.trip.exception.TripRequiredInfoMissingException;
 import ssafy.checkmate.domain.trip.place.GooglePlacesClient;
 import ssafy.checkmate.domain.trip.place.PlaceDetails;
 import ssafy.checkmate.domain.trip.repository.TripRepository;
+import ssafy.checkmate.domain.weather.DailyWeather;
+import ssafy.checkmate.domain.weather.WeatherClient;
+import ssafy.checkmate.domain.weather.entity.TripWeather;
+import ssafy.checkmate.domain.weather.repository.TripWeatherRepository;
 
 @Service
 @RequiredArgsConstructor
@@ -36,11 +41,18 @@ public class TripService {
     private final BagItemRepository bagItemRepository;
     private final BagService bagService;
     private final GooglePlacesClient googlePlacesClient;
+    private final WeatherClient weatherClient;
+    private final TripWeatherRepository tripWeatherRepository;
 
     public List<PlaceSuggestionResponse> autocompleteDestination(String query, String sessionToken) {
         return googlePlacesClient.autocomplete(query, sessionToken).stream()
                 .map(PlaceSuggestionResponse::of)
                 .toList();
+    }
+
+    public PlaceDetailResponse getDestinationDetails(String placeId, String sessionToken) {
+        PlaceDetails placeDetails = googlePlacesClient.getDetails(placeId, sessionToken);
+        return PlaceDetailResponse.of(placeDetails);
     }
 
     @Transactional
@@ -60,9 +72,19 @@ public class TripService {
                 .departureAirline(request.getDepartureAirline())
                 .arrivalAirline(request.getArrivalAirline())
                 .build());
+        saveWeatherForecast(trip);
 
         Bag defaultBag = bagService.ensureDefaultBag(trip.getId(), memberId);
         return TripCreateResponse.of(trip, defaultBag.getId());
+    }
+
+    private void saveWeatherForecast(Trip trip) {
+        List<DailyWeather> forecast = weatherClient.getForecast(
+                trip.getLatitude(), trip.getLongitude(), trip.getStartDate(), trip.getEndDate());
+        List<TripWeather> weathers = forecast.stream()
+                .map(daily -> TripWeather.of(trip.getId(), daily))
+                .toList();
+        tripWeatherRepository.saveAll(weathers);
     }
 
     public TripListResponse getTrips(Long memberId, LocalDate today) {
@@ -89,6 +111,7 @@ public class TripService {
         Trip trip = findTripOwnedBy(tripId, memberId, "본인의 여행만 삭제할 수 있습니다.");
         bagItemRepository.deleteAllByTripId(trip.getId());
         bagRepository.deleteAllByTripId(trip.getId());
+        tripWeatherRepository.deleteAllByTripId(trip.getId());
         tripRepository.delete(trip);
     }
 
