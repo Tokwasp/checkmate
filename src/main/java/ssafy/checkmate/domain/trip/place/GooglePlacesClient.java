@@ -28,7 +28,11 @@ public class GooglePlacesClient {
         this.restClient = googlePlacesRestClient;
     }
 
-    /** POST /v1/places:autocomplete — 관련도 높은 순 후보 목록 */
+    /**
+     * POST /v1/places:autocomplete — 관련도 높은 순 후보 목록.
+     * 업체·랜드마크·주소가 섞이지 않도록 도시/도(행정구역)/국가로만 제한한다
+     * (includedPrimaryTypes).
+     */
     public List<PlaceSuggestion> autocomplete(String input, String sessionToken) {
         AutocompleteRequest request = new AutocompleteRequest(input, sessionToken, LANGUAGE_CODE);
         AutocompleteResponse response = restClient.post()
@@ -70,11 +74,14 @@ public class GooglePlacesClient {
         private final String sessionToken;
         @Getter
         private final String languageCode;
+        @Getter
+        private final List<String> includedPrimaryTypes;
 
         private AutocompleteRequest(String input, String sessionToken, String languageCode) {
             this.input = input;
             this.sessionToken = sessionToken;
             this.languageCode = languageCode;
+            this.includedPrimaryTypes = List.of("locality", "administrative_area_level_1", "country");
         }
     }
 

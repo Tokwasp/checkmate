@@ -1,3 +1,4 @@
+*.md
 .claude/
 HELP.md
 .gradle

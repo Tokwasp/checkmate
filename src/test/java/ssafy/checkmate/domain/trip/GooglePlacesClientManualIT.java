@@ -20,6 +20,9 @@ import ssafy.checkmate.domain.trip.place.PlaceSuggestion;
  *   확인하지 못했다(docs/travel/docs.md §9-8). 카드 등록이 가능한 팀원이 실제 키를
  *   .env에 넣고 이 테스트로 요청/응답 필드명(X-Goog-FieldMask, displayName/location 등)이
  *   맞는지 확인한 뒤, 결과를 docs.md에 반영해야 한다.
+ * - 확인 포인트 추가(fix/auto-research): autocomplete에 includedPrimaryTypes
+ *   (locality/administrative_area_level_1/country) 제한을 걸었다 — 실제 호출 시
+ *   업체·랜드마크·주소 후보가 걸러지고 도시/행정구역/국가만 나오는지 함께 확인할 것.
  *
  * 실행: 아래 @Disabled를 지우고
  *   ./gradlew test --tests "ssafy.checkmate.domain.trip.GooglePlacesClientManualIT"
