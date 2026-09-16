@@ -18,7 +18,9 @@ import ssafy.checkmate.domain.trip.dto.response.PackingProgressResponse;
 import ssafy.checkmate.domain.trip.dto.response.PlaceDetailResponse;
 import ssafy.checkmate.domain.trip.dto.response.PlaceSuggestionResponse;
 import ssafy.checkmate.domain.trip.dto.response.TripCreateResponse;
+import ssafy.checkmate.domain.trip.dto.response.TripDetailResponse;
 import ssafy.checkmate.domain.trip.dto.response.TripListResponse;
+import ssafy.checkmate.domain.trip.dto.response.UpcomingTripResponse;
 import ssafy.checkmate.domain.trip.service.TripService;
 import ssafy.checkmate.global.auth.LoginMember;
 import ssafy.checkmate.global.auth.MemberPrincipal;
@@ -53,6 +55,19 @@ public class TripController {
     @GetMapping("/api/v1/trips")
     public ResponseEntity<ApiResponse<TripListResponse>> list(@LoginMember MemberPrincipal principal) {
         return ResponseEntity.ok(ApiResponse.success(tripService.getTrips(principal.memberId(), LocalDate.now())));
+    }
+
+    @GetMapping("/api/v1/trips/upcoming")
+    public ResponseEntity<ApiResponse<UpcomingTripResponse>> upcoming(@LoginMember MemberPrincipal principal) {
+        return ResponseEntity.ok(ApiResponse.success(
+                tripService.getUpcomingTrip(principal.memberId(), LocalDate.now())));
+    }
+
+    @GetMapping("/api/v1/trips/{tripId}")
+    public ResponseEntity<ApiResponse<TripDetailResponse>> detail(
+            @PathVariable Long tripId, @LoginMember MemberPrincipal principal) {
+        return ResponseEntity.ok(ApiResponse.success(
+                tripService.getTripDetail(tripId, principal.memberId(), LocalDate.now())));
     }
 
     @PutMapping("/api/v1/trips/{tripId}")

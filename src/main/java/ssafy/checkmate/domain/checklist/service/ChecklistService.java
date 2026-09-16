@@ -26,6 +26,7 @@ import ssafy.checkmate.domain.checklist.exception.BagNotFoundException;
 import ssafy.checkmate.domain.checklist.repository.BagItemRepository;
 import ssafy.checkmate.domain.checklist.repository.BagRepository;
 import ssafy.checkmate.domain.trip.entity.Trip;
+import ssafy.checkmate.domain.trip.entity.TripStep;
 import ssafy.checkmate.domain.trip.exception.TripAccessDeniedException;
 import ssafy.checkmate.domain.trip.exception.TripNotFoundException;
 import ssafy.checkmate.domain.trip.repository.TripRepository;
@@ -57,6 +58,10 @@ public class ChecklistService {
                 .map(item -> bagItemRepository.save(BagItem.create(
                         tripId, memberId, item.getName(), item.getCategory(), item.getQuantity(), defaultBag.getId())))
                 .toList();
+
+        if (!savedItems.isEmpty()) {
+            trip.advanceStepAtLeast(TripStep.ITEM_RECOGNITION);
+        }
 
         List<ChecklistItemResponse> items = savedItems.stream()
                 .map(item -> ChecklistItemResponse.of(item, defaultBag))
@@ -110,6 +115,10 @@ public class ChecklistService {
                             tripId, memberId, item.getName(), item.getCategory(), item.getQuantity(), bagId));
                 })
                 .toList();
+
+        if (!savedItems.isEmpty()) {
+            trip.advanceStepAtLeast(TripStep.ITEM_RECOGNITION);
+        }
 
         List<ChecklistItemResponse> items = savedItems.stream()
                 .map(item -> ChecklistItemResponse.of(item, bagsById.get(item.getBagId())))

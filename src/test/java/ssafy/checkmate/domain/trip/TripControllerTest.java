@@ -216,7 +216,97 @@ class TripControllerTest {
                 .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.trips.length()").value(1))
-                .andExpect(jsonPath("$.data.trips[0].tripType").value("CURRENT"));
+                .andExpect(jsonPath("$.data.trips[0].tripType").value("여행 예정"))
+                .andExpect(jsonPath("$.data.trips[0].currentStep").value(2))
+                .andExpect(jsonPath("$.data.trips[0].totalStep").value(4))
+                .andExpect(jsonPath("$.data.trips[0].currentStepName").value("체크리스트 생성"));
+    }
+
+    @Test
+    @DisplayName("출발일이 오늘이거나 이전이면 여행 중으로 표시한다")
+    void getTripsShowsOngoingType() throws Exception {
+        createTrip(1L, LocalDate.now(), LocalDate.now().plusDays(2));
+
+        mockMvc.perform(get("/api/v1/trips")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.trips[0].tripType").value("여행 중"));
+    }
+
+    @Test
+    @DisplayName("여행 상세를 조회한다")
+    void getTripDetail() throws Exception {
+        Trip trip = createTrip(1L, LocalDate.now().plusDays(1), LocalDate.now().plusDays(3));
+        Bag defaultBag = bagRepository.save(Bag.createDefault(trip.getId(), 1L));
+        Bag carrier = bagRepository.save(Bag.create(trip.getId(), 1L, "캐리어"));
+        bagItemRepository.save(BagItem.create(trip.getId(), 1L, "여권", "서류", 1, defaultBag.getId()));
+        bagItemRepository.save(BagItem.create(trip.getId(), 1L, "우산", "생활용품", 2, carrier.getId()));
+
+        mockMvc.perform(get("/api/v1/trips/{tripId}", trip.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.tripType").value("여행 예정"))
+                .andExpect(jsonPath("$.data.destination").value("오사카"))
+                .andExpect(jsonPath("$.data.currentStep").value(2))
+                .andExpect(jsonPath("$.data.totalStep").value(4))
+                .andExpect(jsonPath("$.data.currentStepName").value("체크리스트 생성"))
+                .andExpect(jsonPath("$.data.totalItemCount").value(2))
+                .andExpect(jsonPath("$.data.recognizedItemCount").value(0))
+                .andExpect(jsonPath("$.data.bags.length()").value(2))
+                .andExpect(jsonPath("$.data.bags[*].bagName").value(org.hamcrest.Matchers.containsInAnyOrder("NONE", "캐리어")))
+                .andExpect(jsonPath("$.data.bags[?(@.bagName == '캐리어')].items[0].name")
+                        .value(org.hamcrest.Matchers.contains("우산")));
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 여행의 상세를 조회하면 404를 응답한다")
+    void getTripDetailNotFound() throws Exception {
+        mockMvc.perform(get("/api/v1/trips/{tripId}", 999L)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L)))
+                .andDo(print())
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("본인의 여행이 아니면 상세를 조회할 수 없다")
+    void getTripDetailWithNotOwner() throws Exception {
+        Trip trip = createTrip(1L, LocalDate.now().plusDays(1), LocalDate.now().plusDays(3));
+
+        mockMvc.perform(get("/api/v1/trips/{tripId}", trip.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(2L)))
+                .andDo(print())
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("다가오는 여행을 조회한다")
+    void getUpcomingTrip() throws Exception {
+        Trip trip = createTrip(1L, LocalDate.now().plusDays(5), LocalDate.now().plusDays(7));
+        Bag defaultBag = bagRepository.save(Bag.createDefault(trip.getId(), 1L));
+        BagItem item = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "여권", "서류", 1, defaultBag.getId()));
+        item.update(null, null, null, true, null);
+        bagItemRepository.save(BagItem.create(trip.getId(), 1L, "우산", "생활용품", 1, defaultBag.getId()));
+
+        mockMvc.perform(get("/api/v1/trips/upcoming")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.destination").value("오사카"))
+                .andExpect(jsonPath("$.data.dDay").value(5))
+                .andExpect(jsonPath("$.data.packedItemCount").value(1))
+                .andExpect(jsonPath("$.data.totalItemCount").value(2));
+    }
+
+    @Test
+    @DisplayName("다가오는 여행이 없으면 data는 null이다")
+    void getUpcomingTripWhenNone() throws Exception {
+        mockMvc.perform(get("/api/v1/trips/upcoming")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isEmpty());
     }
 
     @Test

@@ -4,6 +4,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,9 +18,14 @@ import ssafy.checkmate.domain.trip.dto.request.TripCreateRequest;
 import ssafy.checkmate.domain.trip.dto.response.PackingProgressResponse;
 import ssafy.checkmate.domain.trip.dto.response.PlaceDetailResponse;
 import ssafy.checkmate.domain.trip.dto.response.PlaceSuggestionResponse;
+import ssafy.checkmate.domain.trip.dto.response.TripBagItemResponse;
+import ssafy.checkmate.domain.trip.dto.response.TripBagResponse;
 import ssafy.checkmate.domain.trip.dto.response.TripCreateResponse;
+import ssafy.checkmate.domain.trip.dto.response.TripDetailResponse;
 import ssafy.checkmate.domain.trip.dto.response.TripListResponse;
 import ssafy.checkmate.domain.trip.dto.response.TripSummaryResponse;
+import ssafy.checkmate.domain.trip.dto.response.TripWeatherResponse;
+import ssafy.checkmate.domain.trip.dto.response.UpcomingTripResponse;
 import ssafy.checkmate.domain.trip.entity.Trip;
 import ssafy.checkmate.domain.trip.exception.TripAccessDeniedException;
 import ssafy.checkmate.domain.trip.exception.TripNotFoundException;
@@ -88,11 +95,51 @@ public class TripService {
     }
 
     public TripListResponse getTrips(Long memberId, LocalDate today) {
-        List<Trip> trips = tripRepository.findAllByMemberId(memberId);
+        List<Trip> trips = tripRepository.findUpcomingTrips(memberId, today);
         List<TripSummaryResponse> summaries = trips.stream()
-                .map(trip -> TripSummaryResponse.of(trip, (int) bagItemRepository.countByTripId(trip.getId()), today))
+                .map(trip -> {
+                    int totalItemCount = (int) bagItemRepository.countByTripId(trip.getId());
+                    int packedItemCount = (int) bagItemRepository.countByTripIdAndDepartureChecked(trip.getId(), true);
+                    List<TripWeatherResponse> weathers = tripWeatherRepository.findAllByTripIdOrderByDateAsc(trip.getId()).stream()
+                            .map(TripWeather::toDailyWeather)
+                            .map(TripWeatherResponse::of)
+                            .toList();
+                    return TripSummaryResponse.of(trip, packedItemCount, totalItemCount, weathers, today);
+                })
                 .toList();
         return TripListResponse.of(summaries);
+    }
+
+    /** 메인 화면 짐싸기 진척도 위젯용 — 아직 시작하지 않은 여행 중 출국일이 가장 임박한 1건. */
+    public UpcomingTripResponse getUpcomingTrip(Long memberId, LocalDate today) {
+        return tripRepository.findFirstByMemberIdAndStartDateGreaterThanEqualOrderByEndDateAsc(memberId, today)
+                .map(trip -> {
+                    int totalItemCount = (int) bagItemRepository.countByTripId(trip.getId());
+                    int packedItemCount = (int) bagItemRepository.countByTripIdAndDepartureChecked(trip.getId(), true);
+                    return UpcomingTripResponse.of(trip, today, packedItemCount, totalItemCount);
+                })
+                .orElse(null);
+    }
+
+    public TripDetailResponse getTripDetail(Long tripId, Long memberId, LocalDate today) {
+        Trip trip = findTripOwnedBy(tripId, memberId, "본인의 여행만 조회할 수 있습니다.");
+
+        List<BagItem> items = bagItemRepository.findAllByTripId(tripId);
+        Map<Long, List<BagItem>> itemsByBagId = items.stream().collect(Collectors.groupingBy(BagItem::getBagId));
+
+        List<TripBagResponse> bags = bagRepository.findAllByTripId(tripId).stream()
+                .map(bag -> {
+                    List<TripBagItemResponse> bagItems = itemsByBagId.getOrDefault(bag.getId(), List.of()).stream()
+                            .map(TripBagItemResponse::of)
+                            .toList();
+                    return TripBagResponse.of(bag, bagItems);
+                })
+                .toList();
+
+        int totalItemCount = items.size();
+        int recognizedItemCount = (int) items.stream().filter(BagItem::isDepartureChecked).count();
+
+        return TripDetailResponse.of(trip, today, totalItemCount, recognizedItemCount, bags);
     }
 
     @Transactional

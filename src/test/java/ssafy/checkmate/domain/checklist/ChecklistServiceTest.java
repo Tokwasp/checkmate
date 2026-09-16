@@ -31,6 +31,7 @@ import ssafy.checkmate.domain.checklist.service.ChecklistRecommendationEngine;
 import ssafy.checkmate.domain.checklist.service.ChecklistService;
 import ssafy.checkmate.domain.checklist.service.RecommendedItem;
 import ssafy.checkmate.domain.trip.entity.Trip;
+import ssafy.checkmate.domain.trip.entity.TripStep;
 import ssafy.checkmate.domain.trip.exception.TripAccessDeniedException;
 import ssafy.checkmate.domain.trip.exception.TripNotFoundException;
 import ssafy.checkmate.domain.trip.repository.TripRepository;
@@ -87,6 +88,22 @@ class ChecklistServiceTest {
         });
         assertThat(bagItemRepository.findAllByTripId(trip.getId())).hasSize(2);
         assertThat(bagRepository.findAll()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("추천으로 체크리스트 항목이 생기면 여행 단계가 물건 인식으로 넘어간다")
+    void recommendAdvancesTripStep() {
+        // given
+        Trip trip = createTrip(1L);
+        given(recommendationEngine.recommend(any(), any())).willReturn(List.of(
+                new RecommendedItem("여권", "서류", 1)));
+
+        // when
+        checklistService.recommend(trip.getId(), 1L);
+
+        // then
+        Trip updated = tripRepository.findById(trip.getId()).orElseThrow();
+        assertThat(updated.getCurrentStep()).isEqualTo(TripStep.ITEM_RECOGNITION);
     }
 
     @Test
@@ -155,6 +172,21 @@ class ChecklistServiceTest {
                 .filter(i -> i.getName().equals("선크림")).findFirst().orElseThrow();
         assertThat(withBag.getBagName()).isEqualTo("내 캐리어");
         assertThat(withoutBag.getBagName()).isEqualTo("NONE");
+    }
+
+    @Test
+    @DisplayName("항목을 추가하면 여행 단계가 물건 인식으로 넘어간다")
+    void addItemsAdvancesTripStep() {
+        // given
+        Trip trip = createTrip(1L);
+
+        // when
+        checklistService.addItems(trip.getId(), 1L, checklistItemsCreateRequest(
+                List.of(checklistItemCreateRequest("여권", "서류", 1, null))));
+
+        // then
+        Trip updated = tripRepository.findById(trip.getId()).orElseThrow();
+        assertThat(updated.getCurrentStep()).isEqualTo(TripStep.ITEM_RECOGNITION);
     }
 
     @Test
