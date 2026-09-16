@@ -1,6 +1,5 @@
 package ssafy.checkmate.domain.checklist.service;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -10,7 +9,6 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemCreateRequest;
@@ -19,10 +17,6 @@ import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemsCreateRequest;
 import ssafy.checkmate.domain.checklist.dto.response.ChecklistItemResponse;
 import ssafy.checkmate.domain.checklist.dto.response.ChecklistItemsResponse;
 import ssafy.checkmate.domain.checklist.dto.response.ChecklistResponse;
-import ssafy.checkmate.domain.checklist.dto.response.InventoryBagResponse;
-import ssafy.checkmate.domain.checklist.dto.response.InventoryBagsResponse;
-import ssafy.checkmate.domain.checklist.dto.response.InventoryItemResponse;
-import ssafy.checkmate.domain.checklist.dto.response.InventoryItemsResponse;
 import ssafy.checkmate.domain.checklist.dto.response.WeatherResponse;
 import ssafy.checkmate.domain.checklist.entity.Bag;
 import ssafy.checkmate.domain.checklist.entity.BagItem;
@@ -44,9 +38,6 @@ import ssafy.checkmate.domain.weather.repository.TripWeatherRepository;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ChecklistService {
-
-    private static final int INVENTORY_PAGE_SIZE = 9;
-    private static final String ALL_CATEGORY = "전체";
 
     private final BagItemRepository bagItemRepository;
     private final BagRepository bagRepository;
@@ -160,50 +151,6 @@ public class ChecklistService {
         }
         // 인벤토리 사진 삭제는 no-op(image_url이 애초에 항상 null, docs.md §0/§2-1-1, 별도 티켓)
         bagItemRepository.delete(item);
-    }
-
-    public InventoryBagsResponse getInventoryBags(Long tripId, Long memberId) {
-        findTripOwnedBy(tripId, memberId, "본인의 여행만 조회할 수 있습니다.");
-
-        List<Bag> bags = bagRepository.findAllByTripId(tripId);
-
-        List<InventoryBagResponse> result = new ArrayList<>();
-        result.add(InventoryBagResponse.ofAll(
-                (int) bagItemRepository.countByTripIdAndDepartureChecked(tripId, true),
-                withAllCategory(bagItemRepository.findDistinctCategoriesByTripIdAndDepartureChecked(tripId))));
-        bags.forEach(bag -> result.add(InventoryBagResponse.of(bag,
-                (int) bagItemRepository.countByBagIdAndDepartureChecked(bag.getId(), true),
-                withAllCategory(bagItemRepository.findDistinctCategoriesByBagIdAndDepartureChecked(bag.getId())))));
-
-        return InventoryBagsResponse.of(result);
-    }
-
-    public InventoryItemsResponse getInventoryItems(Long tripId, Long memberId, Long bagId, String category, Long lastItemId) {
-        findTripOwnedBy(tripId, memberId, "본인의 여행만 조회할 수 있습니다.");
-
-        if (bagId != null) {
-            Bag bag = bagRepository.findById(bagId).orElseThrow(BagNotFoundException::new);
-            if (!bag.getTripId().equals(tripId)) {
-                throw new BagNotFoundException();
-            }
-        }
-
-        String categoryFilter = ALL_CATEGORY.equals(category) ? null : category;
-        List<BagItem> rows = bagItemRepository.findInventoryItems(
-                tripId, bagId, categoryFilter, lastItemId, PageRequest.of(0, INVENTORY_PAGE_SIZE + 1));
-
-        boolean hasNext = rows.size() > INVENTORY_PAGE_SIZE;
-        List<BagItem> content = hasNext ? rows.subList(0, INVENTORY_PAGE_SIZE) : rows;
-
-        List<InventoryItemResponse> items = content.stream().map(InventoryItemResponse::of).toList();
-        return InventoryItemsResponse.of(items, hasNext);
-    }
-
-    private List<String> withAllCategory(List<String> categories) {
-        List<String> result = new ArrayList<>();
-        result.add(ALL_CATEGORY);
-        result.addAll(categories);
-        return result;
     }
 
     private List<DailyWeather> findForecast(Long tripId) {
