@@ -65,14 +65,13 @@ public class TripService {
     @Transactional
     public TripCreateResponse createTrip(Long memberId, TripCreateRequest request) {
         validateFlightInfo(request.getHasFlight(), request.getDepartureAirline(), request.getArrivalAirline());
-        PlaceDetails placeDetails = googlePlacesClient.getDetails(request.getPlaceId(), request.getSessionToken());
 
         Trip trip = tripRepository.save(Trip.builder()
                 .memberId(memberId)
                 .country(request.getCountry())
                 .region(request.getRegion())
-                .latitude(placeDetails.getLatitude())
-                .longitude(placeDetails.getLongitude())
+                .latitude(request.getLatitude())
+                .longitude(request.getLongitude())
                 .startDate(request.getStartDate())
                 .endDate(request.getEndDate())
                 .purposes(request.getPurposes())
@@ -147,9 +146,8 @@ public class TripService {
     public void updateTrip(Long tripId, Long memberId, TripCreateRequest request) {
         Trip trip = findTripOwnedBy(tripId, memberId, "본인의 여행만 수정할 수 있습니다.");
         validateFlightInfo(request.getHasFlight(), request.getDepartureAirline(), request.getArrivalAirline());
-        PlaceDetails placeDetails = googlePlacesClient.getDetails(request.getPlaceId(), request.getSessionToken());
 
-        trip.update(request.getCountry(), request.getRegion(), placeDetails.getLatitude(), placeDetails.getLongitude(),
+        trip.update(request.getCountry(), request.getRegion(), request.getLatitude(), request.getLongitude(),
                 request.getStartDate(), request.getEndDate(), request.getPurposes(),
                 request.getHasFlight(), request.getDepartureAirline(), request.getArrivalAirline());
     }

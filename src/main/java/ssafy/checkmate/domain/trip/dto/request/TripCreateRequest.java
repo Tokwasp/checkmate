@@ -13,11 +13,19 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class TripCreateRequest {
 
+    /** 자동완성 후보에서 선택한 국가/지역 — 프론트가 그대로 담아 보낸다. */
     @NotBlank(message = "필수 여행 정보가 누락되었습니다.")
-    private String placeId;
+    private String country;
 
     @NotBlank(message = "필수 여행 정보가 누락되었습니다.")
-    private String sessionToken;
+    private String region;
+
+    /** 목적지 상세 조회(6-0-1번)에서 받아 프론트가 기억해둔 좌표 — 여기서는 그대로 저장만 한다. */
+    @NotNull(message = "필수 여행 정보가 누락되었습니다.")
+    private Double latitude;
+
+    @NotNull(message = "필수 여행 정보가 누락되었습니다.")
+    private Double longitude;
 
     /** 자동완성 후보에서 선택한 국가/지역 — Place Details엔 없는 정보라 프론트가 그대로 담아 보낸다. */
     @NotBlank(message = "필수 여행 정보가 누락되었습니다.")

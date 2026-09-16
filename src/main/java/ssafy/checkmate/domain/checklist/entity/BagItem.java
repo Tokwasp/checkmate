@@ -15,9 +15,10 @@ import ssafy.checkmate.global.entity.BaseEntity;
  * 하나로 합친 엔티티다 — 항상 1:1로만 존재해서 나눌 이유가 없었다.
  *
  * 체크 상태는 출국 전(패킹)/귀국 전(점검) 두 시점이 독립적이라 컬럼 이름을 대칭으로
- * 맞췄다. 이번 티켓은 departureChecked만 실제로 쓴다 — departureCheckedByCamera,
- * imageUrl, returnChecked, returnCheckedByCamera는 이후 AR 티켓/return-check 티켓을
- * 위해 컬럼만 미리 마련해둔 예약 필드다.
+ * 맞췄다. 수동 체크든 카메라 인식이든 결과는 같은 컬럼(departureChecked/returnChecked)
+ * 하나로 남긴다 — 체크 수단을 구분해서 저장하지 않는다. 이번 티켓은 departureChecked만
+ * 실제로 쓴다 — imageUrl, returnChecked는 이후 AR 티켓/return-check 티켓을 위해
+ * 컬럼만 미리 마련해둔 예약 필드다.
  */
 @Entity
 @Getter
@@ -42,13 +43,9 @@ public class BagItem extends BaseEntity {
 
     private boolean departureChecked;
 
-    private boolean departureCheckedByCamera;
-
     private String imageUrl;
 
     private boolean returnChecked;
-
-    private boolean returnCheckedByCamera;
 
     @Builder(access = AccessLevel.PRIVATE)
     private BagItem(Long tripId, Long memberId, String name, String category, int quantity, Long bagId) {
@@ -59,10 +56,8 @@ public class BagItem extends BaseEntity {
         this.quantity = quantity;
         this.bagId = bagId;
         this.departureChecked = false;
-        this.departureCheckedByCamera = false;
         this.imageUrl = null;
         this.returnChecked = false;
-        this.returnCheckedByCamera = false;
     }
 
     public static BagItem create(Long tripId, Long memberId, String name, String category, Integer quantity, Long bagId) {

@@ -110,15 +110,12 @@ class TripControllerTest {
     @Test
     @DisplayName("여행을 생성하면 200과 여행 ID, 기본 가방 ID를 응답한다")
     void createTrip() throws Exception {
-        given(googlePlacesClient.getDetails("place-1", "session-1"))
-                .willReturn(new PlaceDetails(35.6895, 139.69171));
-
         mockMvc.perform(post("/api/v1/trips")
                         .header(HttpHeaders.AUTHORIZATION, bearer(1L))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"placeId":"place-1","sessionToken":"session-1",
-                                 "country":"일본","region":"도쿄",
+                                {"country":"일본","region":"도쿄",
+                                 "latitude":35.6895,"longitude":139.69171,
                                  "startDate":"2026-10-03","endDate":"2026-10-07",
                                  "purposes":["관광","미식"],"hasFlight":false}
                                 """))
@@ -130,13 +127,13 @@ class TripControllerTest {
     }
 
     @Test
-    @DisplayName("여행 생성 시 목적지(placeId)가 없으면 400을 응답한다")
-    void createTripWithoutPlaceId() throws Exception {
+    @DisplayName("여행 생성 시 목적지 좌표(latitude)가 없으면 400을 응답한다")
+    void createTripWithoutLatitude() throws Exception {
         mockMvc.perform(post("/api/v1/trips")
                         .header(HttpHeaders.AUTHORIZATION, bearer(1L))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"sessionToken":"session-1","country":"일본","region":"도쿄",
+                                {"country":"일본","region":"도쿄","longitude":139.69171,
                                  "startDate":"2026-10-03",
                                  "endDate":"2026-10-07","hasFlight":false}
                                 """))
@@ -152,8 +149,8 @@ class TripControllerTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(1L))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"placeId":"place-1","sessionToken":"session-1",
-                                 "country":"일본","region":"도쿄",
+                                {"country":"일본","region":"도쿄",
+                                 "latitude":35.6895,"longitude":139.69171,
                                  "endDate":"2026-10-07","hasFlight":false}
                                 """))
                 .andDo(print())
@@ -168,8 +165,8 @@ class TripControllerTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(1L))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"placeId":"place-1","sessionToken":"session-1",
-                                 "country":"일본","region":"도쿄",
+                                {"country":"일본","region":"도쿄",
+                                 "latitude":35.6895,"longitude":139.69171,
                                  "startDate":"2026-10-03","endDate":"2026-10-07"}
                                 """))
                 .andDo(print())
@@ -184,32 +181,13 @@ class TripControllerTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(1L))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"placeId":"place-1","sessionToken":"session-1",
-                                 "country":"일본","region":"도쿄",
+                                {"country":"일본","region":"도쿄",
+                                 "latitude":35.6895,"longitude":139.69171,
                                  "startDate":"2026-10-03","endDate":"2026-10-07","hasFlight":true}
                                 """))
                 .andDo(print())
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("필수 여행 정보가 누락되었습니다."));
-    }
-
-    @Test
-    @DisplayName("유효하지 않은 목적지로 여행을 생성하면 400을 응답한다")
-    void createTripWithInvalidPlace() throws Exception {
-        given(googlePlacesClient.getDetails("invalid-place", "session-1"))
-                .willThrow(new TripInvalidDestinationException());
-
-        mockMvc.perform(post("/api/v1/trips")
-                        .header(HttpHeaders.AUTHORIZATION, bearer(1L))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"placeId":"invalid-place","sessionToken":"session-1",
-                                 "country":"일본","region":"도쿄",
-                                 "startDate":"2026-10-03","endDate":"2026-10-07","hasFlight":false}
-                                """))
-                .andDo(print())
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("유효하지 않은 목적지입니다."));
     }
 
     @Test
@@ -321,15 +299,13 @@ class TripControllerTest {
     @DisplayName("여행 정보를 수정한다")
     void updateTrip() throws Exception {
         Trip trip = createTrip(1L, LocalDate.now().plusDays(1), LocalDate.now().plusDays(3));
-        given(googlePlacesClient.getDetails("place-2", "session-2"))
-                .willReturn(new PlaceDetails(34.6937, 135.5023));
 
         mockMvc.perform(put("/api/v1/trips/{tripId}", trip.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(1L))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"placeId":"place-2","sessionToken":"session-2",
-                                 "country":"일본","region":"오사카",
+                                {"country":"일본","region":"오사카",
+                                 "latitude":34.6937,"longitude":135.5023,
                                  "startDate":"2026-10-03","endDate":"2026-10-08",
                                  "purposes":["관광"],"hasFlight":false}
                                 """))
@@ -345,8 +321,8 @@ class TripControllerTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(1L))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"placeId":"place-1","sessionToken":"session-1",
-                                 "country":"일본","region":"도쿄",
+                                {"country":"일본","region":"도쿄",
+                                 "latitude":35.6895,"longitude":139.69171,
                                  "startDate":"2026-10-03","endDate":"2026-10-07","hasFlight":false}
                                 """))
                 .andDo(print())
@@ -363,8 +339,8 @@ class TripControllerTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(2L))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"placeId":"place-1","sessionToken":"session-1",
-                                 "country":"일본","region":"도쿄",
+                                {"country":"일본","region":"도쿄",
+                                 "latitude":35.6895,"longitude":139.69171,
                                  "startDate":"2026-10-03","endDate":"2026-10-07","hasFlight":false}
                                 """))
                 .andDo(print())

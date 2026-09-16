@@ -122,14 +122,12 @@ class TripServiceTest {
     }
 
     @Test
-    @DisplayName("여행을 생성하면 Google Places로 확인한 목적지/좌표가 저장되고 기본 가방이 함께 생성된다")
+    @DisplayName("여행을 생성하면 요청으로 받은 목적지/좌표가 저장되고 기본 가방이 함께 생성된다")
     void createTrip() {
         // given
-        given(googlePlacesClient.getDetails("place-1", "session-1"))
-                .willReturn(new PlaceDetails(35.6895, 139.69171));
         LocalDate startDate = LocalDate.now().plusDays(1);
         LocalDate endDate = LocalDate.now().plusDays(3);
-        TripCreateRequest request = tripCreateRequest("place-1", "session-1", "일본", "도쿄",
+        TripCreateRequest request = tripCreateRequest(35.6895, 139.69171, "일본", "도쿄",
                 startDate, endDate, List.of("관광", "미식"));
 
         // when
@@ -155,13 +153,11 @@ class TripServiceTest {
     @DisplayName("여행을 생성하면 16일 이내 예보 날씨가 함께 저장된다")
     void createTripSavesWeatherForecast() {
         // given
-        given(googlePlacesClient.getDetails("place-1", "session-1"))
-                .willReturn(new PlaceDetails(35.6895, 139.69171));
         LocalDate startDate = LocalDate.now().plusDays(1);
         LocalDate endDate = LocalDate.now().plusDays(3);
         given(weatherClient.getForecast(anyDouble(), anyDouble(), any(), any())).willReturn(List.of(
                 new DailyWeather(startDate, WeatherType.RAINY, 14.0, 18.0, 80)));
-        TripCreateRequest request = tripCreateRequest("place-1", "session-1", "일본", "도쿄",
+        TripCreateRequest request = tripCreateRequest(35.6895, 139.69171, "일본", "도쿄",
                 startDate, endDate, List.of("관광"));
 
         // when
@@ -181,9 +177,7 @@ class TripServiceTest {
     @DisplayName("항공편을 이용하면 출국/입국 항공사를 함께 저장한다")
     void createTripWithFlight() {
         // given
-        given(googlePlacesClient.getDetails("place-1", "session-1"))
-                .willReturn(new PlaceDetails(35.6895, 139.69171));
-        TripCreateRequest request = tripCreateRequest("place-1", "session-1", "일본", "도쿄",
+        TripCreateRequest request = tripCreateRequest(35.6895, 139.69171, "일본", "도쿄",
                 LocalDate.now().plusDays(1), LocalDate.now().plusDays(3), List.of("관광"),
                 true, "대한항공", "피치항공");
 
@@ -201,7 +195,7 @@ class TripServiceTest {
     @DisplayName("항공편을 이용하는데 항공사 정보가 없으면 예외가 발생한다")
     void createTripWithFlightWithoutAirline() {
         // given
-        TripCreateRequest request = tripCreateRequest("place-1", "session-1", "일본", "도쿄",
+        TripCreateRequest request = tripCreateRequest(35.6895, 139.69171, "일본", "도쿄",
                 LocalDate.now().plusDays(1), LocalDate.now().plusDays(3), List.of("관광"),
                 true, null, null);
 
@@ -212,27 +206,10 @@ class TripServiceTest {
     }
 
     @Test
-    @DisplayName("유효하지 않은 목적지로 여행을 생성하면 예외가 발생한다")
-    void createTripWithInvalidPlace() {
-        // given
-        given(googlePlacesClient.getDetails("invalid-place", "session-1"))
-                .willThrow(new TripInvalidDestinationException());
-        TripCreateRequest request = tripCreateRequest("invalid-place", "session-1", "일본", "도쿄",
-                LocalDate.now().plusDays(1), LocalDate.now().plusDays(3), List.of("관광"));
-
-        // when // then
-        assertThatThrownBy(() -> tripService.createTrip(1L, request))
-                .isInstanceOf(TripInvalidDestinationException.class)
-                .hasMessage("유효하지 않은 목적지입니다.");
-    }
-
-    @Test
     @DisplayName("여행 목적을 선택하지 않아도 여행을 생성할 수 있다")
     void createTripWithNullPurposes() {
         // given
-        given(googlePlacesClient.getDetails("place-1", "session-1"))
-                .willReturn(new PlaceDetails(35.6895, 139.69171));
-        TripCreateRequest request = tripCreateRequest("place-1", "session-1", "일본", "도쿄",
+        TripCreateRequest request = tripCreateRequest(35.6895, 139.69171, "일본", "도쿄",
                 LocalDate.now().plusDays(1), LocalDate.now().plusDays(3), null);
 
         // when
@@ -530,13 +507,11 @@ class TripServiceTest {
     }
 
     @Test
-    @DisplayName("여행 정보를 수정하면 Google Places로 다시 확인한 목적지/좌표로 갱신된다")
+    @DisplayName("여행 정보를 수정하면 요청으로 받은 목적지/좌표로 갱신된다")
     void updateTrip() {
         // given
         Trip trip = createTrip(1L, LocalDate.now().plusDays(1), LocalDate.now().plusDays(3));
-        given(googlePlacesClient.getDetails("place-2", "session-2"))
-                .willReturn(new PlaceDetails(34.6937, 135.5023));
-        TripCreateRequest request = tripCreateRequest("place-2", "session-2", "일본", "오사카",
+        TripCreateRequest request = tripCreateRequest(34.6937, 135.5023, "일본", "오사카",
                 LocalDate.now().plusDays(5), LocalDate.now().plusDays(8), List.of("쇼핑"));
 
         // when
@@ -554,7 +529,7 @@ class TripServiceTest {
     @Test
     @DisplayName("존재하지 않는 여행을 수정하면 예외가 발생한다")
     void updateTripNotFound() {
-        TripCreateRequest request = tripCreateRequest("place-1", "session-1", "일본", "도쿄",
+        TripCreateRequest request = tripCreateRequest(35.6895, 139.69171, "일본", "도쿄",
                 LocalDate.now().plusDays(1), LocalDate.now().plusDays(3), List.of("관광"));
 
         assertThatThrownBy(() -> tripService.updateTrip(999L, 1L, request))
@@ -565,7 +540,7 @@ class TripServiceTest {
     @DisplayName("본인의 여행이 아니면 수정할 수 없다")
     void updateTripWithNotOwner() {
         Trip trip = createTrip(1L, LocalDate.now().plusDays(1), LocalDate.now().plusDays(3));
-        TripCreateRequest request = tripCreateRequest("place-1", "session-1", "일본", "도쿄",
+        TripCreateRequest request = tripCreateRequest(35.6895, 139.69171, "일본", "도쿄",
                 LocalDate.now().plusDays(1), LocalDate.now().plusDays(3), List.of("관광"));
 
         assertThatThrownBy(() -> tripService.updateTrip(trip.getId(), 2L, request))
