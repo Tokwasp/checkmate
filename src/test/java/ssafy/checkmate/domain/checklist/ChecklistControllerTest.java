@@ -182,6 +182,88 @@ class ChecklistControllerTest {
                 .andExpect(jsonPath("$.data").isEmpty());
     }
 
+    @Test
+    @DisplayName("인벤토리 가방 목록을 조회하면 전체 항목과 가방별 개수·카테고리를 함께 응답한다")
+    void getInventoryBags() throws Exception {
+        Trip trip = createTrip(1L);
+        Bag defaultBag = bagRepository.save(Bag.createDefault(trip.getId(), 1L));
+        BagItem item = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "여권", "서류", 1, defaultBag.getId()));
+        item.update(null, null, null, true, null);
+
+        mockMvc.perform(get("/api/v1/trips/{tripId}/checklists/inventory/bags", trip.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.bags[0].bagId").isEmpty())
+                .andExpect(jsonPath("$.data.bags[0].name").value("전체"))
+                .andExpect(jsonPath("$.data.bags[0].count").value(1))
+                .andExpect(jsonPath("$.data.bags[1].name").value("NONE"))
+                .andExpect(jsonPath("$.data.bags[1].count").value(1))
+                .andExpect(jsonPath("$.data.bags[1].categories[0]").value("전체"));
+    }
+
+    @Test
+    @DisplayName("본인의 여행이 아니면 인벤토리 가방 목록 조회 시 403을 응답한다")
+    void getInventoryBagsWithNotOwner() throws Exception {
+        Trip trip = createTrip(2L);
+
+        mockMvc.perform(get("/api/v1/trips/{tripId}/checklists/inventory/bags", trip.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L)))
+                .andDo(print())
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("본인의 여행만 조회할 수 있습니다."));
+    }
+
+    @Test
+    @DisplayName("가방과 카테고리로 인벤토리 아이템을 조회한다")
+    void getInventoryItems() throws Exception {
+        Trip trip = createTrip(1L);
+        Bag defaultBag = bagRepository.save(Bag.createDefault(trip.getId(), 1L));
+        BagItem item = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "여권", "서류", 1, defaultBag.getId()));
+        item.update(null, null, null, true, null);
+
+        mockMvc.perform(get("/api/v1/trips/{tripId}/checklists/inventory/items", trip.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L))
+                        .param("bagId", defaultBag.getId().toString())
+                        .param("category", "전체"))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].itemId").value(item.getId()))
+                .andExpect(jsonPath("$.data.items[0].name").value("여권"))
+                .andExpect(jsonPath("$.data.items[0].quantity").value(1))
+                .andExpect(jsonPath("$.data.hasNext").value(false));
+    }
+
+    @Test
+    @DisplayName("bagId 없이 인벤토리 아이템을 조회하면 여행의 모든 가방을 대상으로 한다")
+    void getInventoryItemsWithoutBagId() throws Exception {
+        Trip trip = createTrip(1L);
+        Bag defaultBag = bagRepository.save(Bag.createDefault(trip.getId(), 1L));
+        BagItem item = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "여권", "서류", 1, defaultBag.getId()));
+        item.update(null, null, null, true, null);
+
+        mockMvc.perform(get("/api/v1/trips/{tripId}/checklists/inventory/items", trip.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L))
+                        .param("category", "전체"))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(1));
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 가방으로 인벤토리 아이템을 조회하면 404를 응답한다")
+    void getInventoryItemsWithNoBag() throws Exception {
+        Trip trip = createTrip(1L);
+
+        mockMvc.perform(get("/api/v1/trips/{tripId}/checklists/inventory/items", trip.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L))
+                        .param("bagId", "999")
+                        .param("category", "전체"))
+                .andDo(print())
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("존재하지 않는 가방입니다."));
+    }
+
     private Trip createTrip(Long memberId) {
         return tripRepository.save(Trip.builder()
                 .memberId(memberId)
