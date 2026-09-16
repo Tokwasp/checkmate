@@ -14,17 +14,19 @@ final class TestRequestFactory {
     private TestRequestFactory() {
     }
 
-    static TripCreateRequest tripCreateRequest(String placeId, String sessionToken,
+    static TripCreateRequest tripCreateRequest(String placeId, String sessionToken, String country, String region,
                                                 LocalDate startDate, LocalDate endDate, List<String> purposes) {
-        return tripCreateRequest(placeId, sessionToken, startDate, endDate, purposes, false, null, null);
+        return tripCreateRequest(placeId, sessionToken, country, region, startDate, endDate, purposes, false, null, null);
     }
 
-    static TripCreateRequest tripCreateRequest(String placeId, String sessionToken,
+    static TripCreateRequest tripCreateRequest(String placeId, String sessionToken, String country, String region,
                                                 LocalDate startDate, LocalDate endDate, List<String> purposes,
                                                 Boolean hasFlight, String departureAirline, String arrivalAirline) {
         Map<String, Object> map = new HashMap<>();
         map.put("placeId", placeId);
         map.put("sessionToken", sessionToken);
+        map.put("country", country);
+        map.put("region", region);
         map.put("startDate", startDate);
         map.put("endDate", endDate);
         map.put("purposes", purposes);

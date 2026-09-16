@@ -78,32 +78,32 @@ class TripServiceTest {
     void autocompleteDestination() {
         // given
         given(googlePlacesClient.autocomplete("도쿄", "session-1")).willReturn(List.of(
-                new PlaceSuggestion("place-1", "도쿄, 일본"),
-                new PlaceSuggestion("place-2", "도쿄도, 일본")));
+                new PlaceSuggestion("place-1", "일본", "도쿄"),
+                new PlaceSuggestion("place-2", "일본", "도쿄도")));
 
         // when
         List<PlaceSuggestionResponse> response = tripService.autocompleteDestination("도쿄", "session-1");
 
         // then
         assertThat(response).hasSize(2)
-                .extracting(PlaceSuggestionResponse::getPlaceId, PlaceSuggestionResponse::getDescription)
+                .extracting(PlaceSuggestionResponse::getPlaceId, PlaceSuggestionResponse::getCountry,
+                        PlaceSuggestionResponse::getRegion)
                 .containsExactly(
-                        tuple("place-1", "도쿄, 일본"),
-                        tuple("place-2", "도쿄도, 일본"));
+                        tuple("place-1", "일본", "도쿄"),
+                        tuple("place-2", "일본", "도쿄도"));
     }
 
     @Test
-    @DisplayName("목적지 상세를 조회하면 이름과 좌표를 반환한다")
+    @DisplayName("목적지 상세를 조회하면 좌표를 반환한다")
     void getDestinationDetails() {
         // given
         given(googlePlacesClient.getDetails("place-1", "session-1"))
-                .willReturn(new PlaceDetails("도쿄", 35.6895, 139.69171));
+                .willReturn(new PlaceDetails(35.6895, 139.69171));
 
         // when
         PlaceDetailResponse response = tripService.getDestinationDetails("place-1", "session-1");
 
         // then
-        assertThat(response.getDestination()).isEqualTo("도쿄");
         assertThat(response.getLatitude()).isEqualTo(35.6895);
         assertThat(response.getLongitude()).isEqualTo(139.69171);
     }
@@ -126,10 +126,11 @@ class TripServiceTest {
     void createTrip() {
         // given
         given(googlePlacesClient.getDetails("place-1", "session-1"))
-                .willReturn(new PlaceDetails("도쿄", 35.6895, 139.69171));
+                .willReturn(new PlaceDetails(35.6895, 139.69171));
         LocalDate startDate = LocalDate.now().plusDays(1);
         LocalDate endDate = LocalDate.now().plusDays(3);
-        TripCreateRequest request = tripCreateRequest("place-1", "session-1", startDate, endDate, List.of("관광", "미식"));
+        TripCreateRequest request = tripCreateRequest("place-1", "session-1", "일본", "도쿄",
+                startDate, endDate, List.of("관광", "미식"));
 
         // when
         TripCreateResponse response = tripService.createTrip(1L, request);
@@ -139,7 +140,8 @@ class TripServiceTest {
         assertThat(response.getDefaultBagId()).isNotNull();
 
         Trip saved = tripRepository.findById(response.getTripId()).orElseThrow();
-        assertThat(saved.getDestination()).isEqualTo("도쿄");
+        assertThat(saved.getCountry()).isEqualTo("일본");
+        assertThat(saved.getRegion()).isEqualTo("도쿄");
         assertThat(saved.getLatitude()).isEqualTo(35.6895);
         assertThat(saved.getLongitude()).isEqualTo(139.69171);
         assertThat(saved.getPurposes()).containsExactly("관광", "미식");
@@ -154,12 +156,13 @@ class TripServiceTest {
     void createTripSavesWeatherForecast() {
         // given
         given(googlePlacesClient.getDetails("place-1", "session-1"))
-                .willReturn(new PlaceDetails("도쿄", 35.6895, 139.69171));
+                .willReturn(new PlaceDetails(35.6895, 139.69171));
         LocalDate startDate = LocalDate.now().plusDays(1);
         LocalDate endDate = LocalDate.now().plusDays(3);
         given(weatherClient.getForecast(anyDouble(), anyDouble(), any(), any())).willReturn(List.of(
                 new DailyWeather(startDate, WeatherType.RAINY, 14.0, 18.0, 80)));
-        TripCreateRequest request = tripCreateRequest("place-1", "session-1", startDate, endDate, List.of("관광"));
+        TripCreateRequest request = tripCreateRequest("place-1", "session-1", "일본", "도쿄",
+                startDate, endDate, List.of("관광"));
 
         // when
         TripCreateResponse response = tripService.createTrip(1L, request);
@@ -179,8 +182,8 @@ class TripServiceTest {
     void createTripWithFlight() {
         // given
         given(googlePlacesClient.getDetails("place-1", "session-1"))
-                .willReturn(new PlaceDetails("도쿄", 35.6895, 139.69171));
-        TripCreateRequest request = tripCreateRequest("place-1", "session-1",
+                .willReturn(new PlaceDetails(35.6895, 139.69171));
+        TripCreateRequest request = tripCreateRequest("place-1", "session-1", "일본", "도쿄",
                 LocalDate.now().plusDays(1), LocalDate.now().plusDays(3), List.of("관광"),
                 true, "대한항공", "피치항공");
 
@@ -198,7 +201,7 @@ class TripServiceTest {
     @DisplayName("항공편을 이용하는데 항공사 정보가 없으면 예외가 발생한다")
     void createTripWithFlightWithoutAirline() {
         // given
-        TripCreateRequest request = tripCreateRequest("place-1", "session-1",
+        TripCreateRequest request = tripCreateRequest("place-1", "session-1", "일본", "도쿄",
                 LocalDate.now().plusDays(1), LocalDate.now().plusDays(3), List.of("관광"),
                 true, null, null);
 
@@ -214,7 +217,7 @@ class TripServiceTest {
         // given
         given(googlePlacesClient.getDetails("invalid-place", "session-1"))
                 .willThrow(new TripInvalidDestinationException());
-        TripCreateRequest request = tripCreateRequest("invalid-place", "session-1",
+        TripCreateRequest request = tripCreateRequest("invalid-place", "session-1", "일본", "도쿄",
                 LocalDate.now().plusDays(1), LocalDate.now().plusDays(3), List.of("관광"));
 
         // when // then
@@ -228,8 +231,8 @@ class TripServiceTest {
     void createTripWithNullPurposes() {
         // given
         given(googlePlacesClient.getDetails("place-1", "session-1"))
-                .willReturn(new PlaceDetails("도쿄", 35.6895, 139.69171));
-        TripCreateRequest request = tripCreateRequest("place-1", "session-1",
+                .willReturn(new PlaceDetails(35.6895, 139.69171));
+        TripCreateRequest request = tripCreateRequest("place-1", "session-1", "일본", "도쿄",
                 LocalDate.now().plusDays(1), LocalDate.now().plusDays(3), null);
 
         // when
@@ -366,7 +369,8 @@ class TripServiceTest {
         LocalDate today = LocalDate.now();
         Trip trip = tripRepository.save(Trip.builder()
                 .memberId(1L)
-                .destination("오사카")
+                .country("일본")
+                .region("오사카")
                 .startDate(today.plusDays(1))
                 .endDate(today.plusDays(3))
                 .purposes(List.of("휴가"))
@@ -389,7 +393,8 @@ class TripServiceTest {
 
         // then
         assertThat(response.getTripType()).isEqualTo(TripType.UPCOMING);
-        assertThat(response.getDestination()).isEqualTo("오사카");
+        assertThat(response.getCountry()).isEqualTo("일본");
+        assertThat(response.getRegion()).isEqualTo("오사카");
         assertThat(response.getStartDate()).isEqualTo(today.plusDays(1));
         assertThat(response.getEndDate()).isEqualTo(today.plusDays(3));
         assertThat(response.getDepartureAirline()).isEqualTo("대한항공");
@@ -458,7 +463,8 @@ class TripServiceTest {
 
         // then
         assertThat(response.getTripId()).isEqualTo(soonest.getId());
-        assertThat(response.getDestination()).isEqualTo("오사카");
+        assertThat(response.getCountry()).isEqualTo("일본");
+        assertThat(response.getRegion()).isEqualTo("오사카");
         assertThat(response.getDDay()).isEqualTo(3);
         assertThat(response.getPackedItemCount()).isZero();
         assertThat(response.getTotalItemCount()).isZero();
@@ -529,8 +535,8 @@ class TripServiceTest {
         // given
         Trip trip = createTrip(1L, LocalDate.now().plusDays(1), LocalDate.now().plusDays(3));
         given(googlePlacesClient.getDetails("place-2", "session-2"))
-                .willReturn(new PlaceDetails("오사카", 34.6937, 135.5023));
-        TripCreateRequest request = tripCreateRequest("place-2", "session-2",
+                .willReturn(new PlaceDetails(34.6937, 135.5023));
+        TripCreateRequest request = tripCreateRequest("place-2", "session-2", "일본", "오사카",
                 LocalDate.now().plusDays(5), LocalDate.now().plusDays(8), List.of("쇼핑"));
 
         // when
@@ -538,7 +544,8 @@ class TripServiceTest {
 
         // then
         Trip updated = tripRepository.findById(trip.getId()).orElseThrow();
-        assertThat(updated.getDestination()).isEqualTo("오사카");
+        assertThat(updated.getCountry()).isEqualTo("일본");
+        assertThat(updated.getRegion()).isEqualTo("오사카");
         assertThat(updated.getLatitude()).isEqualTo(34.6937);
         assertThat(updated.getLongitude()).isEqualTo(135.5023);
         assertThat(updated.getPurposes()).containsExactly("쇼핑");
@@ -547,7 +554,7 @@ class TripServiceTest {
     @Test
     @DisplayName("존재하지 않는 여행을 수정하면 예외가 발생한다")
     void updateTripNotFound() {
-        TripCreateRequest request = tripCreateRequest("place-1", "session-1",
+        TripCreateRequest request = tripCreateRequest("place-1", "session-1", "일본", "도쿄",
                 LocalDate.now().plusDays(1), LocalDate.now().plusDays(3), List.of("관광"));
 
         assertThatThrownBy(() -> tripService.updateTrip(999L, 1L, request))
@@ -558,7 +565,7 @@ class TripServiceTest {
     @DisplayName("본인의 여행이 아니면 수정할 수 없다")
     void updateTripWithNotOwner() {
         Trip trip = createTrip(1L, LocalDate.now().plusDays(1), LocalDate.now().plusDays(3));
-        TripCreateRequest request = tripCreateRequest("place-1", "session-1",
+        TripCreateRequest request = tripCreateRequest("place-1", "session-1", "일본", "도쿄",
                 LocalDate.now().plusDays(1), LocalDate.now().plusDays(3), List.of("관광"));
 
         assertThatThrownBy(() -> tripService.updateTrip(trip.getId(), 2L, request))
@@ -655,7 +662,8 @@ class TripServiceTest {
     private Trip createTrip(Long memberId, LocalDate startDate, LocalDate endDate) {
         return tripRepository.save(Trip.builder()
                 .memberId(memberId)
-                .destination("오사카")
+                .country("일본")
+                .region("오사카")
                 .startDate(startDate)
                 .endDate(endDate)
                 .purposes(List.of("휴가"))

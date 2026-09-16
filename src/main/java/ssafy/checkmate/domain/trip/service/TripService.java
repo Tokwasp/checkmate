@@ -69,7 +69,8 @@ public class TripService {
 
         Trip trip = tripRepository.save(Trip.builder()
                 .memberId(memberId)
-                .destination(placeDetails.getName())
+                .country(request.getCountry())
+                .region(request.getRegion())
                 .latitude(placeDetails.getLatitude())
                 .longitude(placeDetails.getLongitude())
                 .startDate(request.getStartDate())
@@ -148,7 +149,7 @@ public class TripService {
         validateFlightInfo(request.getHasFlight(), request.getDepartureAirline(), request.getArrivalAirline());
         PlaceDetails placeDetails = googlePlacesClient.getDetails(request.getPlaceId(), request.getSessionToken());
 
-        trip.update(placeDetails.getName(), placeDetails.getLatitude(), placeDetails.getLongitude(),
+        trip.update(request.getCountry(), request.getRegion(), placeDetails.getLatitude(), placeDetails.getLongitude(),
                 request.getStartDate(), request.getEndDate(), request.getPurposes(),
                 request.getHasFlight(), request.getDepartureAirline(), request.getArrivalAirline());
     }

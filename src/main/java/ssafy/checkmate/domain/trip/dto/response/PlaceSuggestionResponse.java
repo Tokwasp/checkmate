@@ -7,14 +7,16 @@ import ssafy.checkmate.domain.trip.place.PlaceSuggestion;
 public class PlaceSuggestionResponse {
 
     private final String placeId;
-    private final String description;
+    private final String country;
+    private final String region;
 
-    private PlaceSuggestionResponse(String placeId, String description) {
+    private PlaceSuggestionResponse(String placeId, String country, String region) {
         this.placeId = placeId;
-        this.description = description;
+        this.country = country;
+        this.region = region;
     }
 
     public static PlaceSuggestionResponse of(PlaceSuggestion suggestion) {
-        return new PlaceSuggestionResponse(suggestion.getPlaceId(), suggestion.getDescription());
+        return new PlaceSuggestionResponse(suggestion.getPlaceId(), suggestion.getCountry(), suggestion.getRegion());
     }
 }

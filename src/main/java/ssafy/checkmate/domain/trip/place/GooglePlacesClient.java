@@ -10,8 +10,8 @@ import org.springframework.web.client.RestClient;
 import ssafy.checkmate.domain.trip.exception.TripInvalidDestinationException;
 
 /**
- * Google Places API(New) 호출. Autocomplete로 후보를 검색하고, 사용자가 고른 하나를
- * Place Details로 확정해 이름과 좌표를 받아온다(docs/travel/docs.md §2-2).
+ * Google Places API(New) 호출. Autocomplete로 국가/지역이 분리된 후보를 검색하고,
+ * 사용자가 고른 하나를 Place Details로 확정해 좌표를 받아온다(docs/travel/docs.md §2-2).
  *
  * 카드 미보유로 실제 호출 검증은 못 했다 — 필드명은 Google 공식 문서 기준
  * (docs.md §9-8, GooglePlacesClientManualIT 참고).
@@ -20,7 +20,8 @@ import ssafy.checkmate.domain.trip.exception.TripInvalidDestinationException;
 public class GooglePlacesClient {
 
     private static final String LANGUAGE_CODE = "ko";
-    private static final String DETAILS_FIELD_MASK = "displayName,location";
+    private static final String DETAILS_FIELD_MASK = "location";
+    private static final String COUNTRY_TYPE = "country";
 
     private final RestClient restClient;
 
@@ -50,7 +51,11 @@ public class GooglePlacesClient {
                 .toList();
     }
 
-    /** GET /v1/places/{placeId} — displayName/location만 요청해 가장 싼 Essentials 등급으로 고정 */
+    /**
+     * GET /v1/places/{placeId} — location만 요청해 가장 싼 Essentials 등급으로 고정.
+     * 국가/지역 텍스트는 프론트가 자동완성 후보에서 이미 받아 생성/수정 요청에 함께 보내므로,
+     * 여기서는 placeId 유효성 확인과 좌표 확보만 담당한다.
+     */
     public PlaceDetails getDetails(String placeId, String sessionToken) {
         PlaceDetailsResponse response = restClient.get()
                 .uri("/v1/places/{placeId}?sessionToken={sessionToken}", placeId, sessionToken)
@@ -58,13 +63,10 @@ public class GooglePlacesClient {
                 .retrieve()
                 .body(PlaceDetailsResponse.class);
 
-        if (response == null || response.getDisplayName() == null || response.getLocation() == null) {
+        if (response == null || response.getLocation() == null) {
             throw new TripInvalidDestinationException();
         }
-        return new PlaceDetails(
-                response.getDisplayName().getText(),
-                response.getLocation().getLatitude(),
-                response.getLocation().getLongitude());
+        return new PlaceDetails(response.getLocation().getLatitude(), response.getLocation().getLongitude());
     }
 
     private static class AutocompleteRequest {
@@ -98,8 +100,19 @@ public class GooglePlacesClient {
     static class Suggestion {
         private PlacePrediction placePrediction;
 
+        /**
+         * 국가 후보(예: "일본" 자체를 검색)는 secondaryText가 없어 region을 못 채운다 —
+         * types에 country가 있으면 mainText를 country로, 아니면 region으로 취급한다.
+         */
         private PlaceSuggestion toPlaceSuggestion() {
-            return new PlaceSuggestion(placePrediction.getPlaceId(), placePrediction.getText().getText());
+            StructuredFormat format = placePrediction.getStructuredFormat();
+            String mainText = format.getMainText().getText();
+            String secondaryText = format.getSecondaryText() != null ? format.getSecondaryText().getText() : null;
+
+            boolean isCountry = placePrediction.getTypes() != null && placePrediction.getTypes().contains(COUNTRY_TYPE);
+            String country = isCountry ? mainText : secondaryText;
+            String region = isCountry ? null : mainText;
+            return new PlaceSuggestion(placePrediction.getPlaceId(), country, region);
         }
     }
 
@@ -108,7 +121,16 @@ public class GooglePlacesClient {
     @NoArgsConstructor
     static class PlacePrediction {
         private String placeId;
-        private PlaceText text;
+        private List<String> types;
+        private StructuredFormat structuredFormat;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    static class StructuredFormat {
+        private PlaceText mainText;
+        private PlaceText secondaryText;
     }
 
     @Getter
@@ -122,7 +144,6 @@ public class GooglePlacesClient {
     @Setter
     @NoArgsConstructor
     static class PlaceDetailsResponse {
-        private PlaceText displayName;
         private Location location;
     }
 

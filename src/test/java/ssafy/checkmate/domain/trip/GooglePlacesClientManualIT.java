@@ -18,11 +18,13 @@ import ssafy.checkmate.domain.trip.place.PlaceSuggestion;
  *   ${GOOGLE_PLACES_KEY}가 로컬 .env 값으로 그대로 해석된다.
  * - 카드 미보유로 GCP 결제 계정을 활성화하지 못해, 이 팀에서는 아직 한 번도 실행해서
  *   확인하지 못했다(docs/travel/docs.md §9-8). 카드 등록이 가능한 팀원이 실제 키를
- *   .env에 넣고 이 테스트로 요청/응답 필드명(X-Goog-FieldMask, displayName/location 등)이
+ *   .env에 넣고 이 테스트로 요청/응답 필드명(X-Goog-FieldMask, structuredFormat/location 등)이
  *   맞는지 확인한 뒤, 결과를 docs.md에 반영해야 한다.
  * - 확인 포인트 추가(fix/auto-research): autocomplete에 includedPrimaryTypes
  *   (locality/administrative_area_level_1/country) 제한을 걸었다 — 실제 호출 시
  *   업체·랜드마크·주소 후보가 걸러지고 도시/행정구역/국가만 나오는지 함께 확인할 것.
+ * - 국가/지역 분리 확인: structuredFormat.mainText/secondaryText가 실제로 도시/국가로
+ *   갈라져 오는지, "일본" 같은 국가 자체 후보는 secondaryText 없이 mainText만 오는지 확인할 것.
  *
  * 실행: 아래 @Disabled를 지우고
  *   ./gradlew test --tests "ssafy.checkmate.domain.trip.GooglePlacesClientManualIT"
@@ -39,7 +41,7 @@ class GooglePlacesClientManualIT {
         List<PlaceSuggestion> suggestions = googlePlacesClient.autocomplete("도쿄", "manual-test-session");
 
         System.out.println("[Google Places autocomplete 응답]");
-        suggestions.forEach(s -> System.out.println("- " + s.getPlaceId() + " : " + s.getDescription()));
+        suggestions.forEach(s -> System.out.println("- " + s.getPlaceId() + " : " + s.getCountry() + " " + s.getRegion()));
 
         assertThat(suggestions).isNotEmpty();
     }
@@ -51,10 +53,9 @@ class GooglePlacesClientManualIT {
 
         PlaceDetails details = googlePlacesClient.getDetails(placeId, "manual-test-session");
 
-        System.out.println("[Google Places details 응답] " + details.getName()
-                + " (" + details.getLatitude() + ", " + details.getLongitude() + ")");
+        System.out.println("[Google Places details 응답] ("
+                + details.getLatitude() + ", " + details.getLongitude() + ")");
 
-        assertThat(details.getName()).isNotBlank();
         assertThat(details.getLatitude()).isNotNull();
         assertThat(details.getLongitude()).isNotNull();
     }

@@ -11,7 +11,8 @@ import ssafy.checkmate.domain.trip.entity.TripType;
 public class TripSummaryResponse {
 
     private final Long tripId;
-    private final String destination;
+    private final String country;
+    private final String region;
     private final LocalDate startDate;
     private final LocalDate endDate;
     private final int packedItemCount;
@@ -22,12 +23,13 @@ public class TripSummaryResponse {
     private final String currentStepName;
     private final List<TripWeatherResponse> weathers;
 
-    private TripSummaryResponse(Long tripId, String destination, LocalDate startDate, LocalDate endDate,
+    private TripSummaryResponse(Long tripId, String country, String region, LocalDate startDate, LocalDate endDate,
                                  int packedItemCount, int totalItemCount, TripType tripType,
                                  int currentStep, int totalStep, String currentStepName,
                                  List<TripWeatherResponse> weathers) {
         this.tripId = tripId;
-        this.destination = destination;
+        this.country = country;
+        this.region = region;
         this.startDate = startDate;
         this.endDate = endDate;
         this.packedItemCount = packedItemCount;
@@ -42,7 +44,7 @@ public class TripSummaryResponse {
     public static TripSummaryResponse of(Trip trip, int packedItemCount, int totalItemCount,
                                           List<TripWeatherResponse> weathers, LocalDate today) {
         TripStep step = trip.getCurrentStep();
-        return new TripSummaryResponse(trip.getId(), trip.getDestination(), trip.getStartDate(),
+        return new TripSummaryResponse(trip.getId(), trip.getCountry(), trip.getRegion(), trip.getStartDate(),
                 trip.getEndDate(), packedItemCount, totalItemCount, trip.getType(today),
                 step.getOrder(), TripStep.totalStepCount(), step.getDisplayName(), weathers);
     }

@@ -63,7 +63,7 @@ class TripControllerTest {
     @DisplayName("목적지를 검색하면 200과 후보 목록을 응답한다")
     void autocompleteDestination() throws Exception {
         given(googlePlacesClient.autocomplete("도쿄", "session-1"))
-                .willReturn(List.of(new PlaceSuggestion("place-1", "도쿄, 일본")));
+                .willReturn(List.of(new PlaceSuggestion("place-1", "일본", "도쿄")));
 
         mockMvc.perform(get("/api/v1/trips/destinations/autocomplete")
                         .header(HttpHeaders.AUTHORIZATION, bearer(1L))
@@ -72,14 +72,15 @@ class TripControllerTest {
                 .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].placeId").value("place-1"))
-                .andExpect(jsonPath("$.data[0].description").value("도쿄, 일본"));
+                .andExpect(jsonPath("$.data[0].country").value("일본"))
+                .andExpect(jsonPath("$.data[0].region").value("도쿄"));
     }
 
     @Test
-    @DisplayName("목적지 상세를 조회하면 200과 이름·좌표를 응답한다")
+    @DisplayName("목적지 상세를 조회하면 200과 좌표를 응답한다")
     void destinationDetails() throws Exception {
         given(googlePlacesClient.getDetails("place-1", "session-1"))
-                .willReturn(new PlaceDetails("도쿄", 35.6895, 139.69171));
+                .willReturn(new PlaceDetails(35.6895, 139.69171));
 
         mockMvc.perform(get("/api/v1/trips/destinations/details")
                         .header(HttpHeaders.AUTHORIZATION, bearer(1L))
@@ -87,7 +88,6 @@ class TripControllerTest {
                         .param("sessionToken", "session-1"))
                 .andDo(print())
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.destination").value("도쿄"))
                 .andExpect(jsonPath("$.data.latitude").value(35.6895))
                 .andExpect(jsonPath("$.data.longitude").value(139.69171));
     }
@@ -111,13 +111,14 @@ class TripControllerTest {
     @DisplayName("여행을 생성하면 200과 여행 ID, 기본 가방 ID를 응답한다")
     void createTrip() throws Exception {
         given(googlePlacesClient.getDetails("place-1", "session-1"))
-                .willReturn(new PlaceDetails("도쿄", 35.6895, 139.69171));
+                .willReturn(new PlaceDetails(35.6895, 139.69171));
 
         mockMvc.perform(post("/api/v1/trips")
                         .header(HttpHeaders.AUTHORIZATION, bearer(1L))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"placeId":"place-1","sessionToken":"session-1",
+                                 "country":"일본","region":"도쿄",
                                  "startDate":"2026-10-03","endDate":"2026-10-07",
                                  "purposes":["관광","미식"],"hasFlight":false}
                                 """))
@@ -135,7 +136,8 @@ class TripControllerTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(1L))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"sessionToken":"session-1","startDate":"2026-10-03",
+                                {"sessionToken":"session-1","country":"일본","region":"도쿄",
+                                 "startDate":"2026-10-03",
                                  "endDate":"2026-10-07","hasFlight":false}
                                 """))
                 .andDo(print())
@@ -151,6 +153,7 @@ class TripControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"placeId":"place-1","sessionToken":"session-1",
+                                 "country":"일본","region":"도쿄",
                                  "endDate":"2026-10-07","hasFlight":false}
                                 """))
                 .andDo(print())
@@ -166,6 +169,7 @@ class TripControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"placeId":"place-1","sessionToken":"session-1",
+                                 "country":"일본","region":"도쿄",
                                  "startDate":"2026-10-03","endDate":"2026-10-07"}
                                 """))
                 .andDo(print())
@@ -181,6 +185,7 @@ class TripControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"placeId":"place-1","sessionToken":"session-1",
+                                 "country":"일본","region":"도쿄",
                                  "startDate":"2026-10-03","endDate":"2026-10-07","hasFlight":true}
                                 """))
                 .andDo(print())
@@ -199,6 +204,7 @@ class TripControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"placeId":"invalid-place","sessionToken":"session-1",
+                                 "country":"일본","region":"도쿄",
                                  "startDate":"2026-10-03","endDate":"2026-10-07","hasFlight":false}
                                 """))
                 .andDo(print())
@@ -248,7 +254,8 @@ class TripControllerTest {
                 .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.tripType").value("여행 예정"))
-                .andExpect(jsonPath("$.data.destination").value("오사카"))
+                .andExpect(jsonPath("$.data.country").value("일본"))
+                .andExpect(jsonPath("$.data.region").value("오사카"))
                 .andExpect(jsonPath("$.data.currentStep").value(2))
                 .andExpect(jsonPath("$.data.totalStep").value(4))
                 .andExpect(jsonPath("$.data.currentStepName").value("체크리스트 생성"))
@@ -293,7 +300,8 @@ class TripControllerTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(1L)))
                 .andDo(print())
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.destination").value("오사카"))
+                .andExpect(jsonPath("$.data.country").value("일본"))
+                .andExpect(jsonPath("$.data.region").value("오사카"))
                 .andExpect(jsonPath("$.data.dDay").value(5))
                 .andExpect(jsonPath("$.data.packedItemCount").value(1))
                 .andExpect(jsonPath("$.data.totalItemCount").value(2));
@@ -314,13 +322,14 @@ class TripControllerTest {
     void updateTrip() throws Exception {
         Trip trip = createTrip(1L, LocalDate.now().plusDays(1), LocalDate.now().plusDays(3));
         given(googlePlacesClient.getDetails("place-2", "session-2"))
-                .willReturn(new PlaceDetails("오사카", 34.6937, 135.5023));
+                .willReturn(new PlaceDetails(34.6937, 135.5023));
 
         mockMvc.perform(put("/api/v1/trips/{tripId}", trip.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(1L))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"placeId":"place-2","sessionToken":"session-2",
+                                 "country":"일본","region":"오사카",
                                  "startDate":"2026-10-03","endDate":"2026-10-08",
                                  "purposes":["관광"],"hasFlight":false}
                                 """))
@@ -337,6 +346,7 @@ class TripControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"placeId":"place-1","sessionToken":"session-1",
+                                 "country":"일본","region":"도쿄",
                                  "startDate":"2026-10-03","endDate":"2026-10-07","hasFlight":false}
                                 """))
                 .andDo(print())
@@ -354,6 +364,7 @@ class TripControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"placeId":"place-1","sessionToken":"session-1",
+                                 "country":"일본","region":"도쿄",
                                  "startDate":"2026-10-03","endDate":"2026-10-07","hasFlight":false}
                                 """))
                 .andDo(print())
@@ -391,7 +402,8 @@ class TripControllerTest {
     private Trip createTrip(Long memberId, LocalDate startDate, LocalDate endDate) {
         return tripRepository.save(Trip.builder()
                 .memberId(memberId)
-                .destination("오사카")
+                .country("일본")
+                .region("오사카")
                 .startDate(startDate)
                 .endDate(endDate)
                 .purposes(List.of("휴가"))

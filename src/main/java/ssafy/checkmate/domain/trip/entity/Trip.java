@@ -28,7 +28,9 @@ public class Trip extends BaseEntity {
 
     private Long memberId;
 
-    private String destination;
+    private String country;
+
+    private String region;
 
     private LocalDate startDate;
 
@@ -58,11 +60,12 @@ public class Trip extends BaseEntity {
     private TripStep currentStep;
 
     @Builder
-    public Trip(Long memberId, String destination, LocalDate startDate, LocalDate endDate,
+    public Trip(Long memberId, String country, String region, LocalDate startDate, LocalDate endDate,
                 List<String> purposes, boolean hasFlight, String departureAirline, String arrivalAirline,
                 Double latitude, Double longitude) {
         this.memberId = memberId;
-        this.destination = destination;
+        this.country = country;
+        this.region = region;
         this.startDate = startDate;
         this.endDate = endDate;
         this.purposes = purposes != null ? purposes : new ArrayList<>();
@@ -79,10 +82,11 @@ public class Trip extends BaseEntity {
     }
 
     /** PUT 수정 — 전달된 값으로 전체 교체(부분 수정 아님, 여행 생성과 동일한 요청 형식). */
-    public void update(String destination, Double latitude, Double longitude,
+    public void update(String country, String region, Double latitude, Double longitude,
                         LocalDate startDate, LocalDate endDate, List<String> purposes,
                         boolean hasFlight, String departureAirline, String arrivalAirline) {
-        this.destination = destination;
+        this.country = country;
+        this.region = region;
         this.latitude = latitude;
         this.longitude = longitude;
         this.startDate = startDate;

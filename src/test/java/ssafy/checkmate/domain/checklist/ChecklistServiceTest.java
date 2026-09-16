@@ -288,7 +288,8 @@ class ChecklistServiceTest {
     private Trip createTrip(Long memberId) {
         return tripRepository.save(Trip.builder()
                 .memberId(memberId)
-                .destination("오사카")
+                .country("일본")
+                .region("오사카")
                 .startDate(LocalDate.now().plusDays(1))
                 .endDate(LocalDate.now().plusDays(3))
                 .purposes(List.of("휴가"))

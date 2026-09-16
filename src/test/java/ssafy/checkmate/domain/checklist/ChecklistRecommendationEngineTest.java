@@ -109,7 +109,8 @@ class ChecklistRecommendationEngineTest {
     private Trip trip(List<String> purposes) {
         return Trip.builder()
                 .memberId(1L)
-                .destination("오사카")
+                .country("일본")
+                .region("오사카")
                 .startDate(LocalDate.of(2026, 4, 1))
                 .endDate(LocalDate.of(2026, 4, 3))
                 .purposes(purposes)

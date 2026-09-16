@@ -54,7 +54,8 @@ class GmsClientManualIT {
     void recommendReturnsItemsForRainyTrip() {
         Trip trip = Trip.builder()
                 .memberId(1L)
-                .destination("오사카")
+                .country("일본")
+                .region("오사카")
                 .startDate(LocalDate.now().plusDays(1))
                 .endDate(LocalDate.now().plusDays(3))
                 .purposes(List.of("수영", "캠핑"))
@@ -84,7 +85,8 @@ class GmsClientManualIT {
     void recommendForDaeguUsingRealWeather() {
         Trip trip = Trip.builder()
                 .memberId(1L)
-                .destination("대구")
+                .country("한국")
+                .region("대구")
                 .startDate(LocalDate.now().plusDays(1))
                 .endDate(LocalDate.now().plusDays(4))
                 .purposes(List.of("맛집 탐방"))

@@ -50,7 +50,7 @@ public class ChecklistRecommendationEngine {
 
     private String buildUserPrompt(Trip trip, List<DailyWeather> forecast) {
         StringBuilder prompt = new StringBuilder();
-        prompt.append("목적지: ").append(trip.getDestination()).append('\n');
+        prompt.append("목적지: ").append(trip.getCountry()).append(' ').append(trip.getRegion()).append('\n');
         prompt.append("기간: ").append(trip.getStartDate()).append(" ~ ").append(trip.getEndDate()).append('\n');
         prompt.append("여행 목적: ")
                 .append(trip.getPurposes().isEmpty() ? "미정" : String.join(", ", trip.getPurposes()))

@@ -6,12 +6,10 @@ import lombok.Getter;
 @Getter
 public class PlaceDetails {
 
-    private final String name;
     private final Double latitude;
     private final Double longitude;
 
-    public PlaceDetails(String name, Double latitude, Double longitude) {
-        this.name = name;
+    public PlaceDetails(Double latitude, Double longitude) {
         this.latitude = latitude;
         this.longitude = longitude;
     }

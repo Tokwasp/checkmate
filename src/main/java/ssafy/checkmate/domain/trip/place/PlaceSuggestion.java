@@ -7,10 +7,12 @@ import lombok.Getter;
 public class PlaceSuggestion {
 
     private final String placeId;
-    private final String description;
+    private final String country;
+    private final String region;
 
-    public PlaceSuggestion(String placeId, String description) {
+    public PlaceSuggestion(String placeId, String country, String region) {
         this.placeId = placeId;
-        this.description = description;
+        this.country = country;
+        this.region = region;
     }
 }

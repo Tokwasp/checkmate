@@ -9,15 +9,17 @@ import ssafy.checkmate.domain.trip.entity.Trip;
 public class UpcomingTripResponse {
 
     private final Long tripId;
-    private final String destination;
+    private final String country;
+    private final String region;
     private final int dDay;
     private final int packedItemCount;
     private final int totalItemCount;
 
-    private UpcomingTripResponse(Long tripId, String destination, int dDay,
+    private UpcomingTripResponse(Long tripId, String country, String region, int dDay,
                                   int packedItemCount, int totalItemCount) {
         this.tripId = tripId;
-        this.destination = destination;
+        this.country = country;
+        this.region = region;
         this.dDay = dDay;
         this.packedItemCount = packedItemCount;
         this.totalItemCount = totalItemCount;
@@ -25,6 +27,6 @@ public class UpcomingTripResponse {
 
     public static UpcomingTripResponse of(Trip trip, LocalDate today, int packedItemCount, int totalItemCount) {
         int dDay = (int) ChronoUnit.DAYS.between(today, trip.getStartDate());
-        return new UpcomingTripResponse(trip.getId(), trip.getDestination(), dDay, packedItemCount, totalItemCount);
+        return new UpcomingTripResponse(trip.getId(), trip.getCountry(), trip.getRegion(), dDay, packedItemCount, totalItemCount);
     }
 }
