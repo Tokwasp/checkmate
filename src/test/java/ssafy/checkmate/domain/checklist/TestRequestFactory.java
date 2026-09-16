@@ -9,7 +9,6 @@ import ssafy.checkmate.domain.checklist.dto.request.BagUpdateRequest;
 import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemCreateRequest;
 import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemUpdateRequest;
 import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemsCreateRequest;
-import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemsMoveRequest;
 import tools.jackson.databind.ObjectMapper;
 
 final class TestRequestFactory {
@@ -56,13 +55,6 @@ final class TestRequestFactory {
         map.put("checked", checked);
         map.put("bagId", bagId);
         return MAPPER.convertValue(map, ChecklistItemUpdateRequest.class);
-    }
-
-    static ChecklistItemsMoveRequest checklistItemsMoveRequest(List<Long> itemIds, Long bagId) {
-        Map<String, Object> map = new HashMap<>();
-        map.put("itemIds", itemIds);
-        map.put("bagId", bagId);
-        return MAPPER.convertValue(map, ChecklistItemsMoveRequest.class);
     }
 
     private static Map<String, Object> toMap(ChecklistItemCreateRequest request) {

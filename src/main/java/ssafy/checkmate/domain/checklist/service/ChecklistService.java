@@ -16,7 +16,6 @@ import org.springframework.transaction.annotation.Transactional;
 import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemCreateRequest;
 import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemUpdateRequest;
 import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemsCreateRequest;
-import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemsMoveRequest;
 import ssafy.checkmate.domain.checklist.dto.response.ChecklistItemResponse;
 import ssafy.checkmate.domain.checklist.dto.response.ChecklistItemsResponse;
 import ssafy.checkmate.domain.checklist.dto.response.ChecklistResponse;
@@ -30,7 +29,6 @@ import ssafy.checkmate.domain.checklist.entity.BagItem;
 import ssafy.checkmate.domain.checklist.exception.BagItemAccessDeniedException;
 import ssafy.checkmate.domain.checklist.exception.BagItemNotFoundException;
 import ssafy.checkmate.domain.checklist.exception.BagNotFoundException;
-import ssafy.checkmate.domain.checklist.exception.MixedBagItemsException;
 import ssafy.checkmate.domain.checklist.repository.BagItemRepository;
 import ssafy.checkmate.domain.checklist.repository.BagRepository;
 import ssafy.checkmate.domain.trip.entity.Trip;
@@ -152,44 +150,6 @@ public class ChecklistService {
 
         item.update(request.getName(), request.getQuantity(), request.getCategory(), request.getChecked(), request.getBagId());
         return ChecklistItemResponse.of(item, bag);
-    }
-
-    @Transactional
-    public ChecklistItemsResponse moveItemsToBag(Long tripId, Long memberId, ChecklistItemsMoveRequest request) {
-        findTripOwnedBy(tripId, memberId, "본인의 여행만 수정할 수 있습니다.");
-
-        Bag targetBag = bagRepository.findById(request.getBagId()).orElseThrow(BagNotFoundException::new);
-        if (!targetBag.getTripId().equals(tripId)) {
-            throw new BagNotFoundException();
-        }
-
-        List<Long> itemIds = request.getItemIds();
-        List<BagItem> items = bagItemRepository.findAllById(itemIds);
-        if (items.size() != itemIds.stream().distinct().count()) {
-            throw new BagItemNotFoundException();
-        }
-        if (items.stream().anyMatch(item -> !item.isOwnedBy(memberId))) {
-            throw new BagItemAccessDeniedException("본인의 체크리스트만 수정할 수 있습니다.");
-        }
-        if (items.stream().anyMatch(item -> !item.getTripId().equals(tripId))) {
-            throw new BagItemNotFoundException();
-        }
-
-        Set<Long> sourceBagIds = items.stream().map(BagItem::getBagId).collect(Collectors.toSet());
-        if (sourceBagIds.size() != 1) {
-            throw new MixedBagItemsException();
-        }
-        Long sourceBagId = sourceBagIds.iterator().next();
-        Bag sourceBag = sourceBagId.equals(targetBag.getId())
-                ? targetBag
-                : bagRepository.findById(sourceBagId).orElseThrow(BagNotFoundException::new);
-
-        items.forEach(item -> item.moveToBag(targetBag.getId()));
-
-        List<ChecklistItemResponse> remaining = bagItemRepository.findAllByBagId(sourceBagId).stream()
-                .map(item -> ChecklistItemResponse.of(item, sourceBag))
-                .toList();
-        return ChecklistItemsResponse.of(remaining);
     }
 
     @Transactional

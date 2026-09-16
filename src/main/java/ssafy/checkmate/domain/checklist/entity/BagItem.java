@@ -101,11 +101,4 @@ public class BagItem extends BaseEntity {
         this.bagId = defaultBagId;
         this.departureChecked = false;
     }
-
-    /**
-     * 가방 이동 API(25번) 전용. moveToDefaultBag과 달리 체크 상태는 유지한다.
-     */
-    public void moveToBag(Long bagId) {
-        this.bagId = bagId;
-    }
 }

@@ -169,61 +169,6 @@ class ChecklistControllerTest {
     }
 
     @Test
-    @DisplayName("한 가방의 항목 일부를 다른 가방으로 옮기면 원본 가방에 남은 항목을 응답한다")
-    void moveItemsToBag() throws Exception {
-        Trip trip = createTrip(1L);
-        Bag carrier = bagRepository.save(Bag.create(trip.getId(), 1L, "내 캐리어"));
-        Bag backpack = bagRepository.save(Bag.create(trip.getId(), 1L, "기내 백팩"));
-        BagItem umbrella = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "우산", "생활용품", 1, carrier.getId()));
-        BagItem passport = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "여권", "서류", 1, carrier.getId()));
-
-        mockMvc.perform(patch("/api/v1/trips/{tripId}/checklists/items/bag", trip.getId())
-                        .header(HttpHeaders.AUTHORIZATION, bearer(1L))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"itemIds\":[" + umbrella.getId() + "],\"bagId\":" + backpack.getId() + "}"))
-                .andDo(print())
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.items.length()").value(1))
-                .andExpect(jsonPath("$.data.items[0].itemId").value(passport.getId()))
-                .andExpect(jsonPath("$.data.items[0].bagName").value("내 캐리어"));
-    }
-
-    @Test
-    @DisplayName("옮길 항목이 없으면 400을 응답한다")
-    void moveItemsToBagWithEmptyList() throws Exception {
-        Trip trip = createTrip(1L);
-        Bag backpack = bagRepository.save(Bag.create(trip.getId(), 1L, "기내 백팩"));
-
-        mockMvc.perform(patch("/api/v1/trips/{tripId}/checklists/items/bag", trip.getId())
-                        .header(HttpHeaders.AUTHORIZATION, bearer(1L))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"itemIds\":[],\"bagId\":" + backpack.getId() + "}"))
-                .andDo(print())
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("옮길 항목이 없습니다."));
-    }
-
-    @Test
-    @DisplayName("선택한 항목들이 서로 다른 가방에 속해 있으면 400을 응답한다")
-    void moveItemsToBagWithMixedSourceBags() throws Exception {
-        Trip trip = createTrip(1L);
-        Bag carrier = bagRepository.save(Bag.create(trip.getId(), 1L, "내 캐리어"));
-        Bag backpack = bagRepository.save(Bag.create(trip.getId(), 1L, "기내 백팩"));
-        Bag target = bagRepository.save(Bag.create(trip.getId(), 1L, "이동 대상 가방"));
-        BagItem itemInCarrier = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "우산", "생활용품", 1, carrier.getId()));
-        BagItem itemInBackpack = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "여권", "서류", 1, backpack.getId()));
-
-        mockMvc.perform(patch("/api/v1/trips/{tripId}/checklists/items/bag", trip.getId())
-                        .header(HttpHeaders.AUTHORIZATION, bearer(1L))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"itemIds\":[" + itemInCarrier.getId() + "," + itemInBackpack.getId()
-                                + "],\"bagId\":" + target.getId() + "}"))
-                .andDo(print())
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("선택한 항목들이 같은 가방에 속해 있지 않습니다."));
-    }
-
-    @Test
     @DisplayName("체크리스트 항목을 삭제한다")
     void deleteItem() throws Exception {
         Trip trip = createTrip(1L);

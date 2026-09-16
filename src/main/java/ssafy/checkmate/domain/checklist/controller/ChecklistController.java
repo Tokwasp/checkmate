@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemUpdateRequest;
 import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemsCreateRequest;
-import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemsMoveRequest;
 import ssafy.checkmate.domain.checklist.dto.response.ChecklistItemResponse;
 import ssafy.checkmate.domain.checklist.dto.response.ChecklistItemsResponse;
 import ssafy.checkmate.domain.checklist.dto.response.ChecklistResponse;
@@ -58,14 +57,6 @@ public class ChecklistController {
             @LoginMember MemberPrincipal principal,
             @RequestBody ChecklistItemUpdateRequest request) {
         return ResponseEntity.ok(ApiResponse.success(checklistService.updateItem(itemId, principal.memberId(), request)));
-    }
-
-    @PatchMapping("/api/v1/trips/{tripId}/checklists/items/bag")
-    public ResponseEntity<ApiResponse<ChecklistItemsResponse>> moveItemsToBag(
-            @PathVariable Long tripId,
-            @LoginMember MemberPrincipal principal,
-            @Valid @RequestBody ChecklistItemsMoveRequest request) {
-        return ResponseEntity.ok(ApiResponse.success(checklistService.moveItemsToBag(tripId, principal.memberId(), request)));
     }
 
     @DeleteMapping("/api/v1/checklists/items/{itemId}")

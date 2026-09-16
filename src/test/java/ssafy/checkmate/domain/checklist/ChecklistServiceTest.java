@@ -7,7 +7,6 @@ import static org.mockito.BDDMockito.given;
 import static ssafy.checkmate.domain.checklist.TestRequestFactory.checklistItemCreateRequest;
 import static ssafy.checkmate.domain.checklist.TestRequestFactory.checklistItemUpdateRequest;
 import static ssafy.checkmate.domain.checklist.TestRequestFactory.checklistItemsCreateRequest;
-import static ssafy.checkmate.domain.checklist.TestRequestFactory.checklistItemsMoveRequest;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -31,7 +30,6 @@ import ssafy.checkmate.domain.checklist.entity.BagItem;
 import ssafy.checkmate.domain.checklist.exception.BagItemAccessDeniedException;
 import ssafy.checkmate.domain.checklist.exception.BagItemNotFoundException;
 import ssafy.checkmate.domain.checklist.exception.BagNotFoundException;
-import ssafy.checkmate.domain.checklist.exception.MixedBagItemsException;
 import ssafy.checkmate.domain.checklist.repository.BagItemRepository;
 import ssafy.checkmate.domain.checklist.repository.BagRepository;
 import ssafy.checkmate.domain.checklist.service.ChecklistRecommendationEngine;
@@ -264,95 +262,6 @@ class ChecklistServiceTest {
         assertThatThrownBy(() -> checklistService.updateItem(item.getId(), 2L,
                 checklistItemUpdateRequest(null, null, null, true, null)))
                 .isInstanceOf(BagItemAccessDeniedException.class);
-    }
-
-    @Test
-    @DisplayName("한 가방의 항목 일부를 다른 가방으로 옮기면 원본 가방에 남은 항목만 응답한다")
-    void moveItemsToBag() {
-        // given
-        Trip trip = createTrip(1L);
-        Bag carrier = bagRepository.save(Bag.create(trip.getId(), 1L, "내 캐리어"));
-        Bag backpack = bagRepository.save(Bag.create(trip.getId(), 1L, "기내 백팩"));
-        BagItem umbrella = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "우산", "생활용품", 1, carrier.getId()));
-        BagItem battery = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "보조배터리", "전자기기", 2, carrier.getId()));
-        BagItem passport = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "여권", "서류", 1, carrier.getId()));
-
-        // when
-        ChecklistItemsResponse response = checklistService.moveItemsToBag(trip.getId(), 1L,
-                checklistItemsMoveRequest(List.of(umbrella.getId(), battery.getId()), backpack.getId()));
-
-        // then
-        assertThat(response.getItems()).hasSize(1);
-        assertThat(response.getItems().get(0).getItemId()).isEqualTo(passport.getId());
-        assertThat(response.getItems().get(0).getBagName()).isEqualTo("내 캐리어");
-        assertThat(bagItemRepository.findById(umbrella.getId()).orElseThrow().getBagId()).isEqualTo(backpack.getId());
-        assertThat(bagItemRepository.findById(battery.getId()).orElseThrow().getBagId()).isEqualTo(backpack.getId());
-    }
-
-    @Test
-    @DisplayName("본인의 여행이 아니면 항목을 이동할 수 없다")
-    void moveItemsToBagWithNotOwner() {
-        Trip trip = createTrip(1L);
-        Bag carrier = bagRepository.save(Bag.create(trip.getId(), 1L, "내 캐리어"));
-        Bag backpack = bagRepository.save(Bag.create(trip.getId(), 1L, "기내 백팩"));
-        BagItem item = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "우산", "생활용품", 1, carrier.getId()));
-
-        assertThatThrownBy(() -> checklistService.moveItemsToBag(trip.getId(), 2L,
-                checklistItemsMoveRequest(List.of(item.getId()), backpack.getId())))
-                .isInstanceOf(TripAccessDeniedException.class);
-    }
-
-    @Test
-    @DisplayName("옮길 가방이 다른 여행 소속이면 예외가 발생한다")
-    void moveItemsToBagWithBagFromAnotherTrip() {
-        Trip trip = createTrip(1L);
-        Trip otherTrip = createTrip(1L);
-        Bag carrier = bagRepository.save(Bag.create(trip.getId(), 1L, "내 캐리어"));
-        Bag otherBag = bagRepository.save(Bag.create(otherTrip.getId(), 1L, "다른 여행 가방"));
-        BagItem item = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "우산", "생활용품", 1, carrier.getId()));
-
-        assertThatThrownBy(() -> checklistService.moveItemsToBag(trip.getId(), 1L,
-                checklistItemsMoveRequest(List.of(item.getId()), otherBag.getId())))
-                .isInstanceOf(BagNotFoundException.class);
-    }
-
-    @Test
-    @DisplayName("존재하지 않는 항목이 포함되면 예외가 발생한다")
-    void moveItemsToBagWithMissingItem() {
-        Trip trip = createTrip(1L);
-        Bag backpack = bagRepository.save(Bag.create(trip.getId(), 1L, "기내 백팩"));
-
-        assertThatThrownBy(() -> checklistService.moveItemsToBag(trip.getId(), 1L,
-                checklistItemsMoveRequest(List.of(999L), backpack.getId())))
-                .isInstanceOf(BagItemNotFoundException.class);
-    }
-
-    @Test
-    @DisplayName("본인의 항목이 아니면 이동할 수 없다")
-    void moveItemsToBagWithNotOwnedItem() {
-        Trip trip = createTrip(1L);
-        Bag carrier = bagRepository.save(Bag.create(trip.getId(), 1L, "내 캐리어"));
-        Bag backpack = bagRepository.save(Bag.create(trip.getId(), 1L, "기내 백팩"));
-        BagItem item = bagItemRepository.save(BagItem.create(trip.getId(), 2L, "우산", "생활용품", 1, carrier.getId()));
-
-        assertThatThrownBy(() -> checklistService.moveItemsToBag(trip.getId(), 1L,
-                checklistItemsMoveRequest(List.of(item.getId()), backpack.getId())))
-                .isInstanceOf(BagItemAccessDeniedException.class);
-    }
-
-    @Test
-    @DisplayName("선택한 항목들이 서로 다른 가방에 속해 있으면 예외가 발생한다")
-    void moveItemsToBagWithMixedSourceBags() {
-        Trip trip = createTrip(1L);
-        Bag carrier = bagRepository.save(Bag.create(trip.getId(), 1L, "내 캐리어"));
-        Bag backpack = bagRepository.save(Bag.create(trip.getId(), 1L, "기내 백팩"));
-        Bag target = bagRepository.save(Bag.create(trip.getId(), 1L, "이동 대상 가방"));
-        BagItem itemInCarrier = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "우산", "생활용품", 1, carrier.getId()));
-        BagItem itemInBackpack = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "여권", "서류", 1, backpack.getId()));
-
-        assertThatThrownBy(() -> checklistService.moveItemsToBag(trip.getId(), 1L,
-                checklistItemsMoveRequest(List.of(itemInCarrier.getId(), itemInBackpack.getId()), target.getId())))
-                .isInstanceOf(MixedBagItemsException.class);
     }
 
     @Test
