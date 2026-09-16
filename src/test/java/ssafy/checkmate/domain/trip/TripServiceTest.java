@@ -25,8 +25,11 @@ import ssafy.checkmate.domain.trip.dto.request.TripCreateRequest;
 import ssafy.checkmate.domain.trip.dto.response.PackingProgressResponse;
 import ssafy.checkmate.domain.trip.dto.response.PlaceDetailResponse;
 import ssafy.checkmate.domain.trip.dto.response.PlaceSuggestionResponse;
+import ssafy.checkmate.domain.trip.dto.response.TripBagResponse;
 import ssafy.checkmate.domain.trip.dto.response.TripCreateResponse;
+import ssafy.checkmate.domain.trip.dto.response.TripDetailResponse;
 import ssafy.checkmate.domain.trip.dto.response.TripListResponse;
+import ssafy.checkmate.domain.trip.dto.response.UpcomingTripResponse;
 import ssafy.checkmate.domain.trip.entity.Trip;
 import ssafy.checkmate.domain.trip.entity.TripType;
 import ssafy.checkmate.domain.trip.exception.TripAccessDeniedException;
@@ -238,25 +241,96 @@ class TripServiceTest {
     }
 
     @Test
-    @DisplayName("여행 목록을 진행 중/지난 여행으로 나누고 체크리스트 개수를 함께 반환한다")
+    @DisplayName("지난 여행은 제외하고 담긴/체크된 물품 개수를 함께 반환한다")
     void getTrips() {
         // given
         LocalDate today = LocalDate.now();
         Trip currentTrip = createTrip(1L, today.plusDays(1), today.plusDays(3));
         Trip pastTrip = createTrip(1L, today.minusDays(10), today.minusDays(5));
         Bag defaultBag = bagRepository.save(Bag.createDefault(currentTrip.getId(), 1L));
-        bagItemRepository.save(BagItem.create(currentTrip.getId(), 1L, "여권", "서류", 1, defaultBag.getId()));
+        BagItem passport = bagItemRepository.save(
+                BagItem.create(currentTrip.getId(), 1L, "여권", "서류", 1, defaultBag.getId()));
         bagItemRepository.save(BagItem.create(currentTrip.getId(), 1L, "우산", "생활용품", 1, defaultBag.getId()));
+        passport.update(null, null, null, true, null);
 
         // when
         TripListResponse response = tripService.getTrips(1L, today);
 
         // then
-        assertThat(response.getTrips()).hasSize(2)
-                .extracting("tripId", "checklistCount", "tripType")
+        assertThat(response.getTrips()).hasSize(1)
+                .extracting("tripId", "packedItemCount", "totalItemCount", "tripType")
+                .containsExactly(tuple(currentTrip.getId(), 1, 2, TripType.UPCOMING));
+    }
+
+    @Test
+    @DisplayName("여행 목록 조회 시 현재 준비 단계(2/4, 체크리스트 생성)를 함께 반환한다")
+    void getTripsWithCurrentStep() {
+        // given
+        LocalDate today = LocalDate.now();
+        createTrip(1L, today.plusDays(1), today.plusDays(3));
+
+        // when
+        TripListResponse response = tripService.getTrips(1L, today);
+
+        // then
+        assertThat(response.getTrips()).hasSize(1)
+                .extracting("currentStep", "totalStep", "currentStepName")
+                .containsExactly(tuple(2, 4, "체크리스트 생성"));
+    }
+
+    @Test
+    @DisplayName("출발일이 오늘이거나 이전이면 여행 중, 이후면 여행 예정으로 분류한다")
+    void getTripsClassifiesOngoingVsUpcoming() {
+        // given
+        LocalDate today = LocalDate.now();
+        Trip ongoingTrip = createTrip(1L, today, today.plusDays(2));
+        Trip upcomingTrip = createTrip(1L, today.plusDays(1), today.plusDays(3));
+
+        // when
+        TripListResponse response = tripService.getTrips(1L, today);
+
+        // then
+        assertThat(response.getTrips())
+                .extracting("tripId", "tripType")
                 .containsExactlyInAnyOrder(
-                        tuple(currentTrip.getId(), 2, TripType.CURRENT),
-                        tuple(pastTrip.getId(), 0, TripType.PAST));
+                        tuple(ongoingTrip.getId(), TripType.ONGOING),
+                        tuple(upcomingTrip.getId(), TripType.UPCOMING));
+    }
+
+    @Test
+    @DisplayName("여행 목록은 종료일이 오늘에 가까운 순서로 정렬한다")
+    void getTripsOrderedByEndDate() {
+        // given
+        LocalDate today = LocalDate.now();
+        Trip laterTrip = createTrip(1L, today.plusDays(3), today.plusDays(4));
+        Trip soonerTrip = createTrip(1L, today.plusDays(1), today.plusDays(2));
+
+        // when
+        TripListResponse response = tripService.getTrips(1L, today);
+
+        // then
+        assertThat(response.getTrips())
+                .extracting("tripId")
+                .containsExactly(soonerTrip.getId(), laterTrip.getId());
+    }
+
+    @Test
+    @DisplayName("여행에 저장된 날짜별 날씨를 함께 반환한다")
+    void getTripsWithWeather() {
+        // given
+        LocalDate today = LocalDate.now();
+        Trip trip = createTrip(1L, today.plusDays(1), today.plusDays(2));
+        tripWeatherRepository.save(TripWeather.of(trip.getId(),
+                new DailyWeather(today.plusDays(1), WeatherType.SUNNY, 12.4, 21.0, 10)));
+
+        // when
+        TripListResponse response = tripService.getTrips(1L, today);
+
+        // then
+        assertThat(response.getTrips()).hasSize(1);
+        assertThat(response.getTrips().get(0).getWeathers())
+                .extracting("date", "weatherType", "minTemperature", "maxTemperature", "precipitationProbability")
+                .containsExactly(tuple(today.plusDays(1), "맑음", 12.4, 21.0, 10));
     }
 
     @Test
@@ -282,7 +356,171 @@ class TripServiceTest {
         // then
         assertThat(response.getTrips()).hasSize(1)
                 .extracting("tripType")
-                .containsExactly(TripType.CURRENT);
+                .containsExactly(TripType.ONGOING);
+    }
+
+    @Test
+    @DisplayName("여행 상세를 조회하면 타입/기간/출국 항공사와 가방별 물품 목록을 반환한다")
+    void getTripDetail() {
+        // given
+        LocalDate today = LocalDate.now();
+        Trip trip = tripRepository.save(Trip.builder()
+                .memberId(1L)
+                .destination("오사카")
+                .startDate(today.plusDays(1))
+                .endDate(today.plusDays(3))
+                .purposes(List.of("휴가"))
+                .hasFlight(true)
+                .departureAirline("대한항공")
+                .arrivalAirline("피치항공")
+                .latitude(34.6937)
+                .longitude(135.5023)
+                .build());
+        Bag defaultBag = bagRepository.save(Bag.createDefault(trip.getId(), 1L));
+        Bag carrier = bagRepository.save(Bag.create(trip.getId(), 1L, "캐리어"));
+        bagRepository.save(Bag.create(trip.getId(), 1L, "백팩"));
+        BagItem passport = bagItemRepository.save(
+                BagItem.create(trip.getId(), 1L, "여권", "서류", 1, defaultBag.getId()));
+        passport.update(null, null, null, true, null);
+        bagItemRepository.save(BagItem.create(trip.getId(), 1L, "우산", "생활용품", 2, carrier.getId()));
+
+        // when
+        TripDetailResponse response = tripService.getTripDetail(trip.getId(), 1L, today);
+
+        // then
+        assertThat(response.getTripType()).isEqualTo(TripType.UPCOMING);
+        assertThat(response.getDestination()).isEqualTo("오사카");
+        assertThat(response.getStartDate()).isEqualTo(today.plusDays(1));
+        assertThat(response.getEndDate()).isEqualTo(today.plusDays(3));
+        assertThat(response.getDepartureAirline()).isEqualTo("대한항공");
+        assertThat(response.getCurrentStep()).isEqualTo(2);
+        assertThat(response.getTotalStep()).isEqualTo(4);
+        assertThat(response.getCurrentStepName()).isEqualTo("체크리스트 생성");
+        assertThat(response.getTotalItemCount()).isEqualTo(2);
+        assertThat(response.getRecognizedItemCount()).isEqualTo(1);
+        assertThat(response.getBags()).hasSize(3)
+                .extracting("bagName")
+                .containsExactlyInAnyOrder("NONE", "캐리어", "백팩");
+
+        TripBagResponse carrierBag = response.getBags().stream()
+                .filter(bag -> bag.getBagName().equals("캐리어")).findFirst().orElseThrow();
+        assertThat(carrierBag.getItems()).hasSize(1)
+                .extracting("name", "quantity")
+                .containsExactly(tuple("우산", 2));
+
+        TripBagResponse backpackBag = response.getBags().stream()
+                .filter(bag -> bag.getBagName().equals("백팩")).findFirst().orElseThrow();
+        assertThat(backpackBag.getItems()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("항공편을 이용하지 않으면 여행 상세의 항공사는 null이다")
+    void getTripDetailWithoutFlight() {
+        // given
+        Trip trip = createTrip(1L, LocalDate.now().plusDays(1), LocalDate.now().plusDays(3));
+
+        // when
+        TripDetailResponse response = tripService.getTripDetail(trip.getId(), 1L, LocalDate.now());
+
+        // then
+        assertThat(response.getDepartureAirline()).isNull();
+        assertThat(response.getBags()).isEmpty();
+        assertThat(response.getTotalItemCount()).isZero();
+        assertThat(response.getRecognizedItemCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 여행의 상세를 조회하면 예외가 발생한다")
+    void getTripDetailNotFound() {
+        assertThatThrownBy(() -> tripService.getTripDetail(999L, 1L, LocalDate.now()))
+                .isInstanceOf(TripNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("본인의 여행이 아니면 상세를 조회할 수 없다")
+    void getTripDetailWithNotOwner() {
+        Trip trip = createTrip(1L, LocalDate.now().plusDays(1), LocalDate.now().plusDays(3));
+
+        assertThatThrownBy(() -> tripService.getTripDetail(trip.getId(), 2L, LocalDate.now()))
+                .isInstanceOf(TripAccessDeniedException.class);
+    }
+
+    @Test
+    @DisplayName("다가오는 여행 조회 시 아직 출발하지 않은 여행 중 출발일이 가장 임박한 1건을 반환한다")
+    void getUpcomingTrip() {
+        // given
+        LocalDate today = LocalDate.now();
+        createTrip(1L, today.plusDays(10), today.plusDays(12));
+        Trip soonest = createTrip(1L, today.plusDays(3), today.plusDays(5));
+
+        // when
+        UpcomingTripResponse response = tripService.getUpcomingTrip(1L, today);
+
+        // then
+        assertThat(response.getTripId()).isEqualTo(soonest.getId());
+        assertThat(response.getDestination()).isEqualTo("오사카");
+        assertThat(response.getDDay()).isEqualTo(3);
+        assertThat(response.getPackedItemCount()).isZero();
+        assertThat(response.getTotalItemCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("다가오는 여행 조회 시 담은/전체 물품 개수를 함께 반환한다")
+    void getUpcomingTripWithItemCounts() {
+        // given
+        LocalDate today = LocalDate.now();
+        Trip trip = createTrip(1L, today.plusDays(3), today.plusDays(5));
+        Bag defaultBag = bagRepository.save(Bag.createDefault(trip.getId(), 1L));
+        BagItem packed = bagItemRepository.save(
+                BagItem.create(trip.getId(), 1L, "여권", "서류", 1, defaultBag.getId()));
+        bagItemRepository.save(BagItem.create(trip.getId(), 1L, "우산", "생활용품", 1, defaultBag.getId()));
+        packed.update(null, null, null, true, null);
+
+        // when
+        UpcomingTripResponse response = tripService.getUpcomingTrip(1L, today);
+
+        // then
+        assertThat(response.getPackedItemCount()).isEqualTo(1);
+        assertThat(response.getTotalItemCount()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("다가오는 여행 조회 시 출발일이 오늘인 여행도 포함하고 Dday는 0이다")
+    void getUpcomingTripStartingToday() {
+        // given
+        LocalDate today = LocalDate.now();
+        Trip trip = createTrip(1L, today, today.plusDays(2));
+
+        // when
+        UpcomingTripResponse response = tripService.getUpcomingTrip(1L, today);
+
+        // then
+        assertThat(response.getTripId()).isEqualTo(trip.getId());
+        assertThat(response.getDDay()).isZero();
+    }
+
+    @Test
+    @DisplayName("다가오는 여행 조회 시 이미 출발한(여행 중인) 여행은 제외한다")
+    void getUpcomingTripExcludesOngoingTrip() {
+        // given
+        LocalDate today = LocalDate.now();
+        createTrip(1L, today.minusDays(1), today.plusDays(2));
+
+        // when
+        UpcomingTripResponse response = tripService.getUpcomingTrip(1L, today);
+
+        // then
+        assertThat(response).isNull();
+    }
+
+    @Test
+    @DisplayName("다가오는 여행이 없으면 null을 반환한다")
+    void getUpcomingTripWhenNone() {
+        // when
+        UpcomingTripResponse response = tripService.getUpcomingTrip(1L, LocalDate.now());
+
+        // then
+        assertThat(response).isNull();
     }
 
     @Test

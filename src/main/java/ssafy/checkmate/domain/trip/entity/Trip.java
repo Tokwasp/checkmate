@@ -6,6 +6,8 @@ import java.util.List;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -48,6 +50,13 @@ public class Trip extends BaseEntity {
 
     private Double longitude;
 
+    /**
+     * 여행 준비 진행 단계. "여행 정보 입력" 단계는 여행 생성 요청 자체로 완료되므로,
+     * 생성 시 항상 {@link TripStep#CHECKLIST_CREATION}에서 시작한다.
+     */
+    @Enumerated(EnumType.STRING)
+    private TripStep currentStep;
+
     @Builder
     public Trip(Long memberId, String destination, LocalDate startDate, LocalDate endDate,
                 List<String> purposes, boolean hasFlight, String departureAirline, String arrivalAirline,
@@ -62,6 +71,7 @@ public class Trip extends BaseEntity {
         this.arrivalAirline = hasFlight ? arrivalAirline : null;
         this.latitude = latitude;
         this.longitude = longitude;
+        this.currentStep = TripStep.CHECKLIST_CREATION;
     }
 
     public boolean isOwnedBy(Long memberId) {
@@ -84,6 +94,16 @@ public class Trip extends BaseEntity {
     }
 
     public TripType getType(LocalDate today) {
-        return endDate.isBefore(today) ? TripType.PAST : TripType.CURRENT;
+        if (endDate.isBefore(today)) {
+            return TripType.PAST;
+        }
+        return startDate.isAfter(today) ? TripType.UPCOMING : TripType.ONGOING;
+    }
+
+    /** 이미 지난 단계로는 되돌리지 않고, 더 앞선 단계일 때만 갱신한다. */
+    public void advanceStepAtLeast(TripStep step) {
+        if (currentStep.getOrder() < step.getOrder()) {
+            this.currentStep = step;
+        }
     }
 }

@@ -12,5 +12,7 @@ public interface BagItemRepository extends JpaRepository<BagItem, Long> {
 
     long countByTripId(Long tripId);
 
+    long countByTripIdAndDepartureChecked(Long tripId, boolean departureChecked);
+
     void deleteAllByTripId(Long tripId);
 }
