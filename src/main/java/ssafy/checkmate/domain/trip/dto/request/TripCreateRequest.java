@@ -27,13 +27,6 @@ public class TripCreateRequest {
     @NotNull(message = "필수 여행 정보가 누락되었습니다.")
     private Double longitude;
 
-    /** 자동완성 후보에서 선택한 국가/지역 — Place Details엔 없는 정보라 프론트가 그대로 담아 보낸다. */
-    @NotBlank(message = "필수 여행 정보가 누락되었습니다.")
-    private String country;
-
-    @NotBlank(message = "필수 여행 정보가 누락되었습니다.")
-    private String region;
-
     @NotNull(message = "필수 여행 정보가 누락되었습니다.")
     private LocalDate startDate;
 
