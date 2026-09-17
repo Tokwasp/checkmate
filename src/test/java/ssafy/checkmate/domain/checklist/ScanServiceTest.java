@@ -19,12 +19,14 @@ import ssafy.checkmate.domain.checklist.entity.Bag;
 import ssafy.checkmate.domain.checklist.entity.BagItem;
 import ssafy.checkmate.domain.checklist.entity.BagItemRiskLevel;
 import ssafy.checkmate.domain.checklist.entity.RiskLevel;
+import ssafy.checkmate.domain.checklist.entity.RiskLevelType;
 import ssafy.checkmate.domain.checklist.exception.BagNotFoundException;
 import ssafy.checkmate.domain.checklist.exception.InvalidRegulationTypeException;
 import ssafy.checkmate.domain.checklist.exception.InvalidScanImageException;
 import ssafy.checkmate.domain.checklist.repository.BagItemRepository;
 import ssafy.checkmate.domain.checklist.repository.BagItemRiskLevelRepository;
 import ssafy.checkmate.domain.checklist.repository.BagRepository;
+import ssafy.checkmate.domain.checklist.repository.RiskLevelRepository;
 import ssafy.checkmate.domain.checklist.service.ScanService;
 import ssafy.checkmate.domain.trip.entity.Trip;
 import ssafy.checkmate.domain.trip.exception.TripAccessDeniedException;
@@ -54,6 +56,9 @@ class ScanServiceTest {
 
     @Autowired
     private BagItemRiskLevelRepository bagItemRiskLevelRepository;
+
+    @Autowired
+    private RiskLevelRepository riskLevelRepository;
 
     @Test
     @DisplayName("체크리스트에 같은 이름의 안 담긴 항목이 있으면 그 항목을 담긴 상태로 바꾼다")
@@ -132,7 +137,8 @@ class ScanServiceTest {
 
         // then
         BagItemRiskLevel riskLevel = bagItemRiskLevelRepository.findByBagItemId(response.getItemId()).orElseThrow();
-        assertThat(riskLevel.getRiskLevel()).isEqualTo(RiskLevel.VIOLATION);
+        RiskLevel violation = riskLevelRepository.findByLevel(RiskLevelType.VIOLATION).orElseThrow();
+        assertThat(riskLevel.getRiskLevelId()).isEqualTo(violation.getId());
     }
 
     @Test
@@ -147,11 +153,11 @@ class ScanServiceTest {
         // when — 같은 물품이 이미 담긴 상태라 두 번째 인식은 새 행을 만든다
         ScanItemResponse second = scanService.registerItem(MEMBER_ID, request(trip, bag, "보조배터리", "WARNING"));
 
-        // then
-        assertThat(bagItemRiskLevelRepository.findByBagItemId(first.getItemId()).orElseThrow().getRiskLevel())
-                .isEqualTo(RiskLevel.NONE);
-        assertThat(bagItemRiskLevelRepository.findByBagItemId(second.getItemId()).orElseThrow().getRiskLevel())
-                .isEqualTo(RiskLevel.WARNING);
+        // then — 위험도가 없는(NONE) 첫 번째 물품은 행 자체를 두지 않는다
+        assertThat(bagItemRiskLevelRepository.findByBagItemId(first.getItemId())).isEmpty();
+        RiskLevel warning = riskLevelRepository.findByLevel(RiskLevelType.WARNING).orElseThrow();
+        assertThat(bagItemRiskLevelRepository.findByBagItemId(second.getItemId()).orElseThrow().getRiskLevelId())
+                .isEqualTo(warning.getId());
     }
 
     @Test

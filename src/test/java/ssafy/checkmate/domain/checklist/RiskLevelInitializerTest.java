@@ -25,6 +25,6 @@ class RiskLevelInitializerTest {
         List<RiskLevel> riskLevels = riskLevelRepository.findAll();
 
         assertThat(riskLevels).extracting(RiskLevel::getLevel)
-                .contains(RiskLevelType.FORBIDDEN, RiskLevelType.CAUTION);
+                .contains(RiskLevelType.VIOLATION, RiskLevelType.WARNING);
     }
 }

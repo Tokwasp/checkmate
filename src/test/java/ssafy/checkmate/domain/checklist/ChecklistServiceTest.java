@@ -375,7 +375,7 @@ class ChecklistServiceTest {
         BagItem lighter = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "라이터", "생활용품", 1, carrier.getId()));
         BagItem passport = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "여권", "서류", 1, carrier.getId()));
 
-        RiskLevel caution = riskLevelRepository.save(RiskLevel.create(RiskLevelType.CAUTION, "반입 시 주의가 필요한 물품입니다."));
+        RiskLevel caution = riskLevelRepository.save(RiskLevel.create(RiskLevelType.WARNING, "반입 시 주의가 필요한 물품입니다."));
         bagItemRiskLevelRepository.save(
                 BagItemRiskLevel.create(lighter.getId(), caution.getId(), RiskCheckStep.ITEM_RECOGNITION));
 
@@ -594,7 +594,7 @@ class ChecklistServiceTest {
         BagItem shirt = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "반팔티", "의류", 1, carrier.getId()));
         shirt.update(null, null, null, true, null);
 
-        RiskLevel forbidden = riskLevelRepository.save(RiskLevel.create(RiskLevelType.FORBIDDEN, "반입이 금지된 물품입니다."));
+        RiskLevel forbidden = riskLevelRepository.save(RiskLevel.create(RiskLevelType.VIOLATION, "반입이 금지된 물품입니다."));
         bagItemRiskLevelRepository.save(
                 BagItemRiskLevel.create(lighter.getId(), forbidden.getId(), RiskCheckStep.ITEM_RECOGNITION));
 

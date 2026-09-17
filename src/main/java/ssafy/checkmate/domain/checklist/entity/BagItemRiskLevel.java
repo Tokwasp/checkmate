@@ -46,4 +46,8 @@ public class BagItemRiskLevel extends BaseEntity {
                 .step(step)
                 .build();
     }
+
+    public void changeRiskLevel(Long riskLevelId) {
+        this.riskLevelId = riskLevelId;
+    }
 }

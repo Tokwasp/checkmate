@@ -21,7 +21,7 @@ public class RiskLevelInitializer implements CommandLineRunner {
         if (riskLevelRepository.count() > 0) {
             return;
         }
-        riskLevelRepository.save(RiskLevel.create(RiskLevelType.FORBIDDEN, "반입이 금지된 물품입니다."));
-        riskLevelRepository.save(RiskLevel.create(RiskLevelType.CAUTION, "반입 시 주의가 필요한 물품입니다."));
+        riskLevelRepository.save(RiskLevel.create(RiskLevelType.VIOLATION, "반입이 금지된 물품입니다."));
+        riskLevelRepository.save(RiskLevel.create(RiskLevelType.WARNING, "반입 시 주의가 필요한 물품입니다."));
     }
 }

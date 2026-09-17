@@ -3,8 +3,8 @@ package ssafy.checkmate.domain.checklist.entity;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 public enum RiskLevelType {
-    FORBIDDEN("금지"),
-    CAUTION("주의");
+    WARNING("주의"),
+    VIOLATION("금지");
 
     private final String label;
 

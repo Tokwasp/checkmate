@@ -1,5 +1,6 @@
 package ssafy.checkmate.domain.checklist.service;
 
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -10,14 +11,18 @@ import ssafy.checkmate.domain.checklist.entity.Bag;
 import ssafy.checkmate.domain.checklist.entity.BagItem;
 import ssafy.checkmate.domain.checklist.entity.BagItemRiskLevel;
 import ssafy.checkmate.domain.checklist.entity.ItemClass;
+import ssafy.checkmate.domain.checklist.entity.RiskCheckStep;
 import ssafy.checkmate.domain.checklist.entity.RiskLevel;
+import ssafy.checkmate.domain.checklist.entity.RiskLevelType;
 import ssafy.checkmate.domain.checklist.exception.BagAccessDeniedException;
 import ssafy.checkmate.domain.checklist.exception.BagNotFoundException;
+import ssafy.checkmate.domain.checklist.exception.InvalidRegulationTypeException;
 import ssafy.checkmate.domain.checklist.exception.InvalidScanImageException;
 import ssafy.checkmate.domain.checklist.repository.BagItemRepository;
 import ssafy.checkmate.domain.checklist.repository.BagItemRiskLevelRepository;
 import ssafy.checkmate.domain.checklist.repository.BagRepository;
 import ssafy.checkmate.domain.checklist.repository.ItemClassRepository;
+import ssafy.checkmate.domain.checklist.repository.RiskLevelRepository;
 import ssafy.checkmate.domain.trip.entity.Trip;
 import ssafy.checkmate.domain.trip.entity.TripStep;
 import ssafy.checkmate.domain.trip.exception.TripAccessDeniedException;
@@ -39,18 +44,21 @@ public class ScanService {
     /** 물품 마스터에 없는 ID가 들어왔을 때 쓰는 기본 카테고리 — 인식 때문에 짐 싸기가 막히지 않도록 한다. */
     private static final String FALLBACK_CATEGORY = "기타";
     private static final String IMAGE_DIRECTORY = "inventory";
+    /** 온디바이스 판정 중 위험도가 없다는 뜻 — RiskLevel 마스터에는 없고, 행을 두지 않는 것으로 표현한다. */
+    private static final String NO_RISK_REGULATION_TYPE = "NONE";
 
     private final BagItemRepository bagItemRepository;
     private final BagItemRiskLevelRepository bagItemRiskLevelRepository;
     private final BagRepository bagRepository;
     private final TripRepository tripRepository;
     private final ItemClassRepository itemClassRepository;
+    private final RiskLevelRepository riskLevelRepository;
     private final ImageStorage imageStorage;
 
     @Transactional
     public ScanItemResponse registerItem(Long memberId, ScanItemRequest request) {
         validateImage(request.getImage());
-        RiskLevel riskLevel = RiskLevel.from(request.getRegulationType());
+        Optional<RiskLevel> riskLevel = resolveRiskLevel(request.getRegulationType());
 
         Trip trip = findTripOwnedBy(request.getTripId(), memberId);
         Bag bag = findBagOwnedBy(request.getBagId(), memberId, trip.getId());
@@ -61,7 +69,7 @@ public class ScanService {
         String imageUrl = imageStorage.upload(request.getImage(), IMAGE_DIRECTORY);
 
         BagItem item = packItem(trip, memberId, bag, request.getName(), category, imageUrl);
-        saveRiskLevel(item.getId(), riskLevel);
+        applyRiskLevel(item.getId(), riskLevel);
 
         return ScanItemResponse.of(item);
     }
@@ -83,11 +91,37 @@ public class ScanService {
                 });
     }
 
-    private void saveRiskLevel(Long bagItemId, RiskLevel riskLevel) {
+    /** 규정 타입 문자열을 검증하고, 위험(주의·금지)일 때만 그에 대응하는 RiskLevel 마스터 행을 찾아 돌려준다. */
+    private Optional<RiskLevel> resolveRiskLevel(String regulationType) {
+        if (NO_RISK_REGULATION_TYPE.equals(regulationType)) {
+            return Optional.empty();
+        }
+        RiskLevelType type = parseRegulationType(regulationType);
+        return Optional.of(riskLevelRepository.findByLevel(type).orElseThrow(InvalidRegulationTypeException::new));
+    }
+
+    private RiskLevelType parseRegulationType(String regulationType) {
+        try {
+            return RiskLevelType.valueOf(regulationType);
+        } catch (IllegalArgumentException e) {
+            throw new InvalidRegulationTypeException();
+        }
+    }
+
+    private void applyRiskLevel(Long bagItemId, Optional<RiskLevel> riskLevel) {
+        if (riskLevel.isEmpty()) {
+            bagItemRiskLevelRepository.deleteByBagItemId(bagItemId);
+            return;
+        }
+        saveRiskLevel(bagItemId, riskLevel.get().getId());
+    }
+
+    private void saveRiskLevel(Long bagItemId, Long riskLevelId) {
         bagItemRiskLevelRepository.findByBagItemId(bagItemId)
                 .ifPresentOrElse(
-                        existing -> existing.changeRiskLevel(riskLevel),
-                        () -> bagItemRiskLevelRepository.save(BagItemRiskLevel.create(bagItemId, riskLevel)));
+                        existing -> existing.changeRiskLevel(riskLevelId),
+                        () -> bagItemRiskLevelRepository.save(
+                                BagItemRiskLevel.create(bagItemId, riskLevelId, RiskCheckStep.ITEM_RECOGNITION)));
     }
 
     private void validateImage(MultipartFile image) {

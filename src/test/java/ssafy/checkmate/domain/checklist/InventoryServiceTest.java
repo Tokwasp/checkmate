@@ -15,7 +15,9 @@ import org.springframework.transaction.annotation.Transactional;
 import ssafy.checkmate.domain.checklist.entity.Bag;
 import ssafy.checkmate.domain.checklist.entity.BagItem;
 import ssafy.checkmate.domain.checklist.entity.BagItemRiskLevel;
+import ssafy.checkmate.domain.checklist.entity.RiskCheckStep;
 import ssafy.checkmate.domain.checklist.entity.RiskLevel;
+import ssafy.checkmate.domain.checklist.entity.RiskLevelType;
 import ssafy.checkmate.domain.checklist.exception.BagItemAccessDeniedException;
 import ssafy.checkmate.domain.checklist.exception.BagItemBagMismatchException;
 import ssafy.checkmate.domain.checklist.exception.BagItemNotFoundException;
@@ -23,6 +25,7 @@ import ssafy.checkmate.domain.checklist.exception.BagItemUpdateEmptyException;
 import ssafy.checkmate.domain.checklist.repository.BagItemRepository;
 import ssafy.checkmate.domain.checklist.repository.BagItemRiskLevelRepository;
 import ssafy.checkmate.domain.checklist.repository.BagRepository;
+import ssafy.checkmate.domain.checklist.repository.RiskLevelRepository;
 import ssafy.checkmate.domain.checklist.service.InventoryService;
 import ssafy.checkmate.domain.trip.entity.Trip;
 import ssafy.checkmate.domain.trip.repository.TripRepository;
@@ -49,6 +52,9 @@ class InventoryServiceTest {
 
     @Autowired
     private BagItemRiskLevelRepository bagItemRiskLevelRepository;
+
+    @Autowired
+    private RiskLevelRepository riskLevelRepository;
 
     @Test
     @DisplayName("수량과 체크 여부를 수정한다")
@@ -131,7 +137,9 @@ class InventoryServiceTest {
         // given
         Bag bag = saveBag(saveTrip(MEMBER_ID), MEMBER_ID);
         BagItem item = saveItem(bag, "보조배터리");
-        bagItemRiskLevelRepository.save(BagItemRiskLevel.create(item.getId(), RiskLevel.WARNING));
+        RiskLevel warning = riskLevelRepository.findByLevel(RiskLevelType.WARNING).orElseThrow();
+        bagItemRiskLevelRepository.save(
+                BagItemRiskLevel.create(item.getId(), warning.getId(), RiskCheckStep.ITEM_RECOGNITION));
 
         // when
         inventoryService.deleteItem(item.getId(), MEMBER_ID);
