@@ -27,11 +27,14 @@ import ssafy.checkmate.domain.checklist.dto.response.InventoryItemsResponse;
 import ssafy.checkmate.domain.checklist.dto.response.WeatherResponse;
 import ssafy.checkmate.domain.checklist.entity.Bag;
 import ssafy.checkmate.domain.checklist.entity.BagItem;
+import ssafy.checkmate.domain.checklist.entity.RiskCheckStep;
 import ssafy.checkmate.domain.checklist.exception.BagItemAccessDeniedException;
 import ssafy.checkmate.domain.checklist.exception.BagItemNotFoundException;
 import ssafy.checkmate.domain.checklist.exception.BagNotFoundException;
 import ssafy.checkmate.domain.checklist.exception.MixedBagItemsException;
 import ssafy.checkmate.domain.checklist.repository.BagItemRepository;
+import ssafy.checkmate.domain.checklist.repository.BagItemRiskLevelRepository;
+import ssafy.checkmate.domain.checklist.repository.BagItemRiskLevelView;
 import ssafy.checkmate.domain.checklist.repository.BagRepository;
 import ssafy.checkmate.domain.trip.entity.Trip;
 import ssafy.checkmate.domain.trip.entity.TripStep;
@@ -53,6 +56,7 @@ public class ChecklistService {
     private static final String CHECKED_TODO = "안담은";
 
     private final BagItemRepository bagItemRepository;
+    private final BagItemRiskLevelRepository bagItemRiskLevelRepository;
     private final BagRepository bagRepository;
     private final TripRepository tripRepository;
     private final BagService bagService;
@@ -193,8 +197,12 @@ public class ChecklistService {
 
         items.forEach(item -> item.moveToBag(targetBag.getId()));
 
-        List<ChecklistItemResponse> remaining = bagItemRepository.findAllByBagId(sourceBagId).stream()
-                .map(item -> ChecklistItemResponse.of(item, sourceBag))
+        List<BagItem> remainingItems = bagItemRepository.findAllByBagId(sourceBagId);
+        Map<Long, String> riskLevelsByItemId =
+                findRiskLevelsByItemIds(remainingItems.stream().map(BagItem::getId).toList());
+
+        List<ChecklistItemResponse> remaining = remainingItems.stream()
+                .map(item -> ChecklistItemResponse.of(item, sourceBag, riskLevelsByItemId.get(item.getId())))
                 .toList();
         return ChecklistItemsResponse.of(remaining);
     }
@@ -242,8 +250,25 @@ public class ChecklistService {
         boolean hasNext = rows.size() > INVENTORY_PAGE_SIZE;
         List<BagItem> content = hasNext ? rows.subList(0, INVENTORY_PAGE_SIZE) : rows;
 
-        List<InventoryItemResponse> items = content.stream().map(InventoryItemResponse::of).toList();
+        Map<Long, String> riskLevelsByItemId =
+                findRiskLevelsByItemIds(content.stream().map(BagItem::getId).toList());
+
+        List<InventoryItemResponse> items = content.stream()
+                .map(item -> InventoryItemResponse.of(item, riskLevelsByItemId.get(item.getId())))
+                .toList();
         return InventoryItemsResponse.of(items, hasNext);
+    }
+
+    private Map<Long, String> findRiskLevelsByItemIds(List<Long> bagItemIds) {
+        if (bagItemIds.isEmpty()) {
+            return Map.of();
+        }
+        return bagItemRiskLevelRepository
+                .findRiskLevelsByBagItemIdsAndStep(bagItemIds, RiskCheckStep.ITEM_RECOGNITION)
+                .stream()
+                .collect(Collectors.toMap(
+                        BagItemRiskLevelView::getBagItemId,
+                        view -> view.getLevel().getLabel()));
     }
 
     private int sumQuantity(List<BagItem> items) {

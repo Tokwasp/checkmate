@@ -28,12 +28,18 @@ import ssafy.checkmate.domain.checklist.dto.response.InventoryItemResponse;
 import ssafy.checkmate.domain.checklist.dto.response.InventoryItemsResponse;
 import ssafy.checkmate.domain.checklist.entity.Bag;
 import ssafy.checkmate.domain.checklist.entity.BagItem;
+import ssafy.checkmate.domain.checklist.entity.BagItemRiskLevel;
+import ssafy.checkmate.domain.checklist.entity.RiskCheckStep;
+import ssafy.checkmate.domain.checklist.entity.RiskLevel;
+import ssafy.checkmate.domain.checklist.entity.RiskLevelType;
 import ssafy.checkmate.domain.checklist.exception.BagItemAccessDeniedException;
 import ssafy.checkmate.domain.checklist.exception.BagItemNotFoundException;
 import ssafy.checkmate.domain.checklist.exception.BagNotFoundException;
 import ssafy.checkmate.domain.checklist.exception.MixedBagItemsException;
 import ssafy.checkmate.domain.checklist.repository.BagItemRepository;
+import ssafy.checkmate.domain.checklist.repository.BagItemRiskLevelRepository;
 import ssafy.checkmate.domain.checklist.repository.BagRepository;
+import ssafy.checkmate.domain.checklist.repository.RiskLevelRepository;
 import ssafy.checkmate.domain.checklist.service.ChecklistRecommendationEngine;
 import ssafy.checkmate.domain.checklist.service.ChecklistService;
 import ssafy.checkmate.domain.checklist.service.RecommendedItem;
@@ -60,6 +66,12 @@ class ChecklistServiceTest {
 
     @Autowired
     private BagItemRepository bagItemRepository;
+
+    @Autowired
+    private RiskLevelRepository riskLevelRepository;
+
+    @Autowired
+    private BagItemRiskLevelRepository bagItemRiskLevelRepository;
 
     @Autowired
     private TripRepository tripRepository;
@@ -354,6 +366,30 @@ class ChecklistServiceTest {
     }
 
     @Test
+    @DisplayName("남은 항목 응답에도 물품 인식 단계의 위험도 레벨이 함께 내려간다")
+    void moveItemsToBagWithRiskLevel() {
+        // given
+        Trip trip = createTrip(1L);
+        Bag carrier = bagRepository.save(Bag.create(trip.getId(), 1L, "내 캐리어"));
+        Bag backpack = bagRepository.save(Bag.create(trip.getId(), 1L, "기내 백팩"));
+        BagItem lighter = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "라이터", "생활용품", 1, carrier.getId()));
+        BagItem passport = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "여권", "서류", 1, carrier.getId()));
+
+        RiskLevel caution = riskLevelRepository.save(RiskLevel.create(RiskLevelType.CAUTION, "반입 시 주의가 필요한 물품입니다."));
+        bagItemRiskLevelRepository.save(
+                BagItemRiskLevel.create(lighter.getId(), caution.getId(), RiskCheckStep.ITEM_RECOGNITION));
+
+        // when — 여권만 다른 가방으로 옮기면 원본 가방(내 캐리어)에는 라이터만 남는다
+        ChecklistItemsResponse response = checklistService.moveItemsToBag(trip.getId(), 1L,
+                checklistItemsMoveRequest(List.of(passport.getId()), backpack.getId()));
+
+        // then
+        assertThat(response.getItems()).hasSize(1);
+        assertThat(response.getItems().get(0).getItemId()).isEqualTo(lighter.getId());
+        assertThat(response.getItems().get(0).getRiskLevel()).isEqualTo("주의");
+    }
+
+    @Test
     @DisplayName("본인의 여행이 아니면 항목을 이동할 수 없다")
     void moveItemsToBagWithNotOwner() {
         Trip trip = createTrip(1L);
@@ -545,6 +581,39 @@ class ChecklistServiceTest {
         assertThat(response.isHasNext()).isFalse();
         assertThat(response.getItems()).extracting(InventoryItemResponse::getItemId)
                 .containsExactly(adapter.getId(), battery.getId());
+    }
+
+    @Test
+    @DisplayName("물품 인식 단계에 위험도가 배정된 아이템은 위험도 레벨을 함께 응답한다")
+    void getInventoryItemsWithRiskLevel() {
+        // given
+        Trip trip = createTrip(1L);
+        Bag carrier = bagRepository.save(Bag.create(trip.getId(), 1L, "내 캐리어"));
+        BagItem lighter = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "라이터", "생활용품", 1, carrier.getId()));
+        lighter.update(null, null, null, true, null);
+        BagItem shirt = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "반팔티", "의류", 1, carrier.getId()));
+        shirt.update(null, null, null, true, null);
+
+        RiskLevel forbidden = riskLevelRepository.save(RiskLevel.create(RiskLevelType.FORBIDDEN, "반입이 금지된 물품입니다."));
+        bagItemRiskLevelRepository.save(
+                BagItemRiskLevel.create(lighter.getId(), forbidden.getId(), RiskCheckStep.ITEM_RECOGNITION));
+
+        // when
+        InventoryItemsResponse response = checklistService.getInventoryItems(
+                trip.getId(), 1L, carrier.getId(), "전체", null);
+
+        // then
+        InventoryItemResponse lighterResponse = response.getItems().stream()
+                .filter(item -> item.getItemId().equals(lighter.getId()))
+                .findFirst()
+                .orElseThrow();
+        InventoryItemResponse shirtResponse = response.getItems().stream()
+                .filter(item -> item.getItemId().equals(shirt.getId()))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(lighterResponse.getRiskLevel()).isEqualTo("금지");
+        assertThat(shirtResponse.getRiskLevel()).isNull();
     }
 
     @Test

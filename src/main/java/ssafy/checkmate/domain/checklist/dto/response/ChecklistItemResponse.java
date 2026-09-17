@@ -1,5 +1,6 @@
 package ssafy.checkmate.domain.checklist.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Getter;
 import ssafy.checkmate.domain.checklist.entity.Bag;
 import ssafy.checkmate.domain.checklist.entity.BagItem;
@@ -17,8 +18,12 @@ public class ChecklistItemResponse {
     private final String carriageType;
     private final String bagType;
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private final String riskLevel;
+
     private ChecklistItemResponse(Long itemId, String name, String category, int quantity, boolean checked,
-                                   Long bagId, String bagName, String carriageType, String bagType) {
+                                   Long bagId, String bagName, String carriageType, String bagType,
+                                   String riskLevel) {
         this.itemId = itemId;
         this.name = name;
         this.category = category;
@@ -28,9 +33,14 @@ public class ChecklistItemResponse {
         this.bagName = bagName;
         this.carriageType = carriageType;
         this.bagType = bagType;
+        this.riskLevel = riskLevel;
     }
 
     public static ChecklistItemResponse of(BagItem bagItem, Bag bag) {
+        return of(bagItem, bag, null);
+    }
+
+    public static ChecklistItemResponse of(BagItem bagItem, Bag bag, String riskLevel) {
         BagResponse bagResponse = BagResponse.of(bag);
         return new ChecklistItemResponse(
                 bagItem.getId(),
@@ -41,6 +51,7 @@ public class ChecklistItemResponse {
                 bagResponse.getBagId(),
                 bagResponse.getName(),
                 bagResponse.getCarriageType(),
-                bagResponse.getType());
+                bagResponse.getType(),
+                riskLevel);
     }
 }

@@ -10,15 +10,18 @@ public class InventoryItemResponse {
     private final String name;
     private final int quantity;
     private final String imageUrl;
+    private final String riskLevel;
 
-    private InventoryItemResponse(Long itemId, String name, int quantity, String imageUrl) {
+    private InventoryItemResponse(Long itemId, String name, int quantity, String imageUrl, String riskLevel) {
         this.itemId = itemId;
         this.name = name;
         this.quantity = quantity;
         this.imageUrl = imageUrl;
+        this.riskLevel = riskLevel;
     }
 
-    public static InventoryItemResponse of(BagItem bagItem) {
-        return new InventoryItemResponse(bagItem.getId(), bagItem.getName(), bagItem.getQuantity(), bagItem.getImageUrl());
+    public static InventoryItemResponse of(BagItem bagItem, String riskLevel) {
+        return new InventoryItemResponse(
+                bagItem.getId(), bagItem.getName(), bagItem.getQuantity(), bagItem.getImageUrl(), riskLevel);
     }
 }
