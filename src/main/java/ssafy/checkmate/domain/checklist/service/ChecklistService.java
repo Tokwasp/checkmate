@@ -100,8 +100,13 @@ public class ChecklistService {
         int checkedCount = sumQuantity(bagItems.stream().filter(BagItem::isDepartureChecked).toList());
         int uncheckedCount = totalCount - checkedCount;
 
-        List<ChecklistItemResponse> items = filterByChecked(bagItems, checked).stream()
-                .map(item -> ChecklistItemResponse.of(item, bagsById.get(item.getBagId())))
+        List<BagItem> filteredItems = filterByChecked(bagItems, checked);
+        Map<Long, String> riskLevelsByItemId =
+                findRiskLevelsByItemIds(filteredItems.stream().map(BagItem::getId).toList());
+
+        List<ChecklistItemResponse> items = filteredItems.stream()
+                .map(item -> ChecklistItemResponse.of(
+                        item, bagsById.get(item.getBagId()), riskLevelsByItemId.get(item.getId())))
                 .toList();
 
         return ChecklistResponse.of(
