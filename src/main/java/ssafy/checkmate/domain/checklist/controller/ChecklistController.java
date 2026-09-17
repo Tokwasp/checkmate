@@ -40,8 +40,10 @@ public class ChecklistController {
     @GetMapping("/api/v1/trips/{tripId}/checklists")
     public ResponseEntity<ApiResponse<ChecklistResponse>> getChecklist(
             @PathVariable Long tripId,
+            @RequestParam(defaultValue = "전체") String checked,
             @LoginMember MemberPrincipal principal) {
-        return ResponseEntity.ok(ApiResponse.success(checklistService.getChecklist(tripId, principal.memberId())));
+        return ResponseEntity.ok(
+                ApiResponse.success(checklistService.getChecklist(tripId, principal.memberId(), checked)));
     }
 
     @PostMapping("/api/v1/trips/{tripId}/checklists/items")

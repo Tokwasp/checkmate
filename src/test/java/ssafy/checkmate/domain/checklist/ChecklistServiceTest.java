@@ -141,7 +141,7 @@ class ChecklistServiceTest {
                 new DailyWeather(trip.getStartDate(), WeatherType.SUNNY, 12.0, 21.0, 10)));
 
         // when
-        ChecklistResponse response = checklistService.getChecklist(trip.getId(), 1L);
+        ChecklistResponse response = checklistService.getChecklist(trip.getId(), 1L, "전체");
 
         // then
         assertThat(response.getStartDate()).isEqualTo(trip.getStartDate());
@@ -152,10 +152,74 @@ class ChecklistServiceTest {
     }
 
     @Test
+    @DisplayName("체크리스트 조회의 담김 개수는 개수가 아니라 수량 합이다")
+    void getChecklistCountsByQuantity() {
+        // given
+        Trip trip = createTrip(1L);
+        Bag defaultBag = bagRepository.save(Bag.createDefault(trip.getId(), 1L));
+        BagItem checkedItem = bagItemRepository.save(
+                BagItem.create(trip.getId(), 1L, "여권", "서류", 1, defaultBag.getId()));
+        checkedItem.update(null, null, null, true, null);
+        bagItemRepository.save(BagItem.create(trip.getId(), 1L, "양말", "의류", 3, defaultBag.getId()));
+
+        // when
+        ChecklistResponse response = checklistService.getChecklist(trip.getId(), 1L, "전체");
+
+        // then
+        assertThat(response.getTotalCount()).isEqualTo(4);
+        assertThat(response.getCheckedCount()).isEqualTo(1);
+        assertThat(response.getUncheckedCount()).isEqualTo(3);
+        assertThat(response.getItems()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("checked=담은이면 체크된 항목만 반환하고, 개수 3종은 필터와 무관하게 그대로다")
+    void getChecklistFilteredByDone() {
+        // given
+        Trip trip = createTrip(1L);
+        Bag defaultBag = bagRepository.save(Bag.createDefault(trip.getId(), 1L));
+        BagItem checkedItem = bagItemRepository.save(
+                BagItem.create(trip.getId(), 1L, "여권", "서류", 1, defaultBag.getId()));
+        checkedItem.update(null, null, null, true, null);
+        bagItemRepository.save(BagItem.create(trip.getId(), 1L, "양말", "의류", 3, defaultBag.getId()));
+
+        // when
+        ChecklistResponse response = checklistService.getChecklist(trip.getId(), 1L, "담은");
+
+        // then
+        assertThat(response.getItems()).hasSize(1)
+                .extracting(ChecklistItemResponse::getName)
+                .containsExactly("여권");
+        assertThat(response.getTotalCount()).isEqualTo(4);
+        assertThat(response.getCheckedCount()).isEqualTo(1);
+        assertThat(response.getUncheckedCount()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("checked=안담은이면 체크 안 된 항목만 반환한다")
+    void getChecklistFilteredByTodo() {
+        // given
+        Trip trip = createTrip(1L);
+        Bag defaultBag = bagRepository.save(Bag.createDefault(trip.getId(), 1L));
+        BagItem checkedItem = bagItemRepository.save(
+                BagItem.create(trip.getId(), 1L, "여권", "서류", 1, defaultBag.getId()));
+        checkedItem.update(null, null, null, true, null);
+        bagItemRepository.save(BagItem.create(trip.getId(), 1L, "양말", "의류", 3, defaultBag.getId()));
+
+        // when
+        ChecklistResponse response = checklistService.getChecklist(trip.getId(), 1L, "안담은");
+
+        // then
+        assertThat(response.getItems()).hasSize(1)
+                .extracting(ChecklistItemResponse::getName)
+                .containsExactly("양말");
+    }
+
+    @Test
     @DisplayName("본인의 여행이 아니면 체크리스트를 조회할 수 없다")
     void getChecklistWithNotOwner() {
         Trip trip = createTrip(1L);
-        assertThatThrownBy(() -> checklistService.getChecklist(trip.getId(), 2L))
+        assertThatThrownBy(() -> checklistService.getChecklist(trip.getId(), 2L, "전체"))
                 .isInstanceOf(TripAccessDeniedException.class);
     }
 

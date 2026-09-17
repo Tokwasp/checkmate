@@ -49,6 +49,8 @@ public class ChecklistService {
 
     private static final int INVENTORY_PAGE_SIZE = 9;
     private static final String ALL_CATEGORY = "전체";
+    private static final String CHECKED_DONE = "담은";
+    private static final String CHECKED_TODO = "안담은";
 
     private final BagItemRepository bagItemRepository;
     private final BagRepository bagRepository;
@@ -80,7 +82,7 @@ public class ChecklistService {
         return ChecklistItemsResponse.of(items);
     }
 
-    public ChecklistResponse getChecklist(Long tripId, Long memberId) {
+    public ChecklistResponse getChecklist(Long tripId, Long memberId, String checked) {
         Trip trip = findTripOwnedBy(tripId, memberId, "본인의 여행만 조회할 수 있습니다.");
 
         List<WeatherResponse> weathers = findForecast(tripId).stream()
@@ -90,11 +92,16 @@ public class ChecklistService {
         List<BagItem> bagItems = bagItemRepository.findAllByTripId(tripId);
         Map<Long, Bag> bagsById = findBagsByIds(bagItems.stream().map(BagItem::getBagId));
 
-        List<ChecklistItemResponse> items = bagItems.stream()
+        int totalCount = sumQuantity(bagItems);
+        int checkedCount = sumQuantity(bagItems.stream().filter(BagItem::isDepartureChecked).toList());
+        int uncheckedCount = totalCount - checkedCount;
+
+        List<ChecklistItemResponse> items = filterByChecked(bagItems, checked).stream()
                 .map(item -> ChecklistItemResponse.of(item, bagsById.get(item.getBagId())))
                 .toList();
 
-        return ChecklistResponse.of(trip.getStartDate(), trip.getEndDate(), weathers, items);
+        return ChecklistResponse.of(
+                trip.getStartDate(), trip.getEndDate(), totalCount, checkedCount, uncheckedCount, weathers, items);
     }
 
     @Transactional
@@ -237,6 +244,20 @@ public class ChecklistService {
 
         List<InventoryItemResponse> items = content.stream().map(InventoryItemResponse::of).toList();
         return InventoryItemsResponse.of(items, hasNext);
+    }
+
+    private int sumQuantity(List<BagItem> items) {
+        return items.stream().mapToInt(BagItem::getQuantity).sum();
+    }
+
+    private List<BagItem> filterByChecked(List<BagItem> items, String checked) {
+        if (CHECKED_DONE.equals(checked)) {
+            return items.stream().filter(BagItem::isDepartureChecked).toList();
+        }
+        if (CHECKED_TODO.equals(checked)) {
+            return items.stream().filter(item -> !item.isDepartureChecked()).toList();
+        }
+        return items;
     }
 
     private List<String> withAllCategory(List<String> categories) {

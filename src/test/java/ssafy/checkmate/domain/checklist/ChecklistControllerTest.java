@@ -92,7 +92,33 @@ class ChecklistControllerTest {
                 .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items.length()").value(1))
-                .andExpect(jsonPath("$.data.items[0].name").value("여권"));
+                .andExpect(jsonPath("$.data.items[0].name").value("여권"))
+                .andExpect(jsonPath("$.data.totalCount").value(1))
+                .andExpect(jsonPath("$.data.checkedCount").value(0))
+                .andExpect(jsonPath("$.data.uncheckedCount").value(1));
+    }
+
+    @Test
+    @DisplayName("checked=담은으로 조회하면 체크된 항목만 응답하고, 개수 3종은 그대로 내려온다")
+    void getChecklistFilteredByDone() throws Exception {
+        Trip trip = createTrip(1L);
+        Bag defaultBag = bagRepository.save(Bag.createDefault(trip.getId(), 1L));
+        BagItem checkedItem = bagItemRepository.save(
+                BagItem.create(trip.getId(), 1L, "여권", "서류", 1, defaultBag.getId()));
+        checkedItem.update(null, null, null, true, null);
+        bagItemRepository.save(BagItem.create(trip.getId(), 1L, "양말", "의류", 3, defaultBag.getId()));
+        given(weatherClient.getForecast(anyDouble(), anyDouble(), any(), any())).willReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/trips/{tripId}/checklists", trip.getId())
+                        .param("checked", "담은")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.items[0].name").value("여권"))
+                .andExpect(jsonPath("$.data.totalCount").value(4))
+                .andExpect(jsonPath("$.data.checkedCount").value(1))
+                .andExpect(jsonPath("$.data.uncheckedCount").value(3));
     }
 
     @Test
