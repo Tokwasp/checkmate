@@ -47,6 +47,8 @@ public class BagItem extends BaseEntity {
 
     private boolean returnChecked;
 
+    private boolean favorite;
+
     @Builder(access = AccessLevel.PRIVATE)
     private BagItem(Long tripId, Long memberId, String name, String category, int quantity, Long bagId) {
         this.tripId = tripId;
@@ -58,6 +60,7 @@ public class BagItem extends BaseEntity {
         this.departureChecked = false;
         this.imageUrl = null;
         this.returnChecked = false;
+        this.favorite = false;
     }
 
     public static BagItem create(Long tripId, Long memberId, String name, String category, Integer quantity, Long bagId) {
@@ -73,6 +76,18 @@ public class BagItem extends BaseEntity {
 
     public boolean isOwnedBy(Long memberId) {
         return this.memberId.equals(memberId);
+    }
+
+    /**
+     * 카메라 인식(26번)으로 체크리스트에 없던 물품이 새로 담긴 경우.
+     * 담긴 상태(departureChecked=true)로 만들어지고 수량은 1로 시작한다.
+     */
+    public static BagItem createRecognized(Long tripId, Long memberId, String name, String category,
+                                           Long bagId, String imageUrl) {
+        BagItem item = BagItem.create(tripId, memberId, name, category, 1, bagId);
+        item.departureChecked = true;
+        item.imageUrl = imageUrl;
+        return item;
     }
 
     /**
@@ -107,5 +122,30 @@ public class BagItem extends BaseEntity {
      */
     public void moveToBag(Long bagId) {
         this.bagId = bagId;
+    }
+
+    /**
+     * 카메라 인식(26번)으로 체크리스트의 기존 항목이 가방에 담긴 경우.
+     * 수량과 즐겨찾기는 건드리지 않고, 카테고리는 비어 있을 때만 채운다.
+     */
+    public void packInto(Long bagId, String imageUrl, String category) {
+        this.bagId = bagId;
+        this.imageUrl = imageUrl;
+        this.departureChecked = true;
+        if (this.category == null || this.category.isBlank()) {
+            this.category = category;
+        }
+    }
+
+    /**
+     * 인벤토리 물품 수정(27번). 전달된 값만 반영하고 null인 필드는 기존 값을 유지한다.
+     */
+    public void updatePacking(Integer quantity, Boolean checked) {
+        if (quantity != null) {
+            this.quantity = quantity;
+        }
+        if (checked != null) {
+            this.departureChecked = checked;
+        }
     }
 }

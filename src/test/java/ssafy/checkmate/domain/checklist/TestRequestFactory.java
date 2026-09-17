@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import ssafy.checkmate.domain.checklist.dto.request.BagCreateRequest;
 import ssafy.checkmate.domain.checklist.dto.request.BagUpdateRequest;
+import ssafy.checkmate.domain.checklist.dto.request.BagItemUpdateRequest;
 import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemCreateRequest;
 import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemUpdateRequest;
 import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemsCreateRequest;
@@ -30,6 +31,15 @@ final class TestRequestFactory {
         map.put("name", name);
         map.put("carriageType", carriageType);
         return MAPPER.convertValue(map, BagUpdateRequest.class);
+    }
+
+    static BagItemUpdateRequest bagItemUpdateRequest(Long bagId, String name, Integer quantity, Boolean checked) {
+        Map<String, Object> map = new HashMap<>();
+        map.put("bagId", bagId);
+        map.put("name", name);
+        map.put("quantity", quantity);
+        map.put("checked", checked);
+        return MAPPER.convertValue(map, BagItemUpdateRequest.class);
     }
 
     static ChecklistItemCreateRequest checklistItemCreateRequest(String name, String category, Integer quantity, Long bagId) {

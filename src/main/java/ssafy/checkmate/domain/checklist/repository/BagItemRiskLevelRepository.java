@@ -1,5 +1,6 @@
 package ssafy.checkmate.domain.checklist.repository;
 
+import java.util.Optional;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -8,6 +9,10 @@ import ssafy.checkmate.domain.checklist.entity.BagItemRiskLevel;
 import ssafy.checkmate.domain.checklist.entity.RiskCheckStep;
 
 public interface BagItemRiskLevelRepository extends JpaRepository<BagItemRiskLevel, Long> {
+
+    Optional<BagItemRiskLevel> findByBagItemId(Long bagItemId);
+
+    void deleteByBagItemId(Long bagItemId);
 
     @Query("""
             SELECT br.bagItemId AS bagItemId, rl.level AS level
