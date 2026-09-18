@@ -5,3 +5,12 @@ services:
       - "8080:8080"
     env_file:
       - .env
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ap-northeast-2
+        awslogs-group: /S15P21D102/prod
+        awslogs-stream: app
+        awslogs-create-group: "true"
+        mode: non-blocking
+        max-buffer-size: 4m

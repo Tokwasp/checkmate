@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT:3306}/${DB_NAME}?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      # 마이그레이션 도구(Flyway 등) 도입 전까지 임시로 update 사용. 도입 후 validate로 전환할 것.
+      ddl-auto: update
+    show-sql: false
+  h2:
+    console:
+      enabled: false

@@ -47,7 +47,5 @@ storage:
   local-dir: ${STORAGE_LOCAL_DIR:./uploads}
   bucket: ${AWS_S3_BUCKET:}
   region: ${AWS_S3_REGION:ap-northeast-2}
-  access-key: ${AWS_ACCESS_KEY:}
-  secret-key: ${AWS_SECRET_KEY:}
   base-url: ${AWS_S3_BASE_URL:}
 
