@@ -2,6 +2,7 @@ package ssafy.checkmate.domain.checklist.service;
 
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -35,7 +36,11 @@ import ssafy.checkmate.global.storage.ImageStorage;
  *
  * 체크리스트 항목과 인벤토리 물품은 같은 BagItem 한 행이라, "체크리스트 대조"는 별도 연결
  * 테이블을 두는 게 아니라 그 행의 departureChecked/bagId/imageUrl을 갱신하는 동작이다.
+ *
+ * 로그는 EC2에서 흐름을 따라갈 수 있도록 {@code [scan]} 접두사로 남긴다. 운영 로그 레벨이
+ * INFO라 정상 흐름은 info, 물품 마스터 미등록처럼 짚어볼 일은 warn으로 남긴다.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -63,15 +68,26 @@ public class ScanService {
         Trip trip = findTripOwnedBy(request.getTripId(), memberId);
         Bag bag = findBagOwnedBy(request.getBagId(), memberId, trip.getId());
 
-        String category = itemClassRepository.findById(request.getItemClassId())
-                .map(ItemClass::getCategory)
-                .orElse(FALLBACK_CATEGORY);
+        String category = resolveCategory(request.getItemClassId());
         String imageUrl = imageStorage.upload(request.getImage(), IMAGE_DIRECTORY);
+        log.info("[scan] 이미지 업로드 완료 tripId={} bagId={} category={} imageUrl={}",
+                trip.getId(), bag.getId(), category, imageUrl);
 
         BagItem item = packItem(trip, memberId, bag, request.getName(), category, imageUrl);
         applyRiskLevel(item.getId(), riskLevel);
 
         return ScanItemResponse.of(item);
+    }
+
+    /** 물품 마스터에서 카테고리를 찾는다. 없으면 기본 카테고리로 대체하고 warn으로 남긴다(마스터 보강 신호). */
+    private String resolveCategory(Long itemClassId) {
+        return itemClassRepository.findById(itemClassId)
+                .map(ItemClass::getCategory)
+                .orElseGet(() -> {
+                    log.warn("[scan] 물품 마스터에 없는 itemClassId={} — 카테고리를 {}로 대체한다",
+                            itemClassId, FALLBACK_CATEGORY);
+                    return FALLBACK_CATEGORY;
+                });
     }
 
     /**
@@ -82,12 +98,18 @@ public class ScanService {
         return bagItemRepository.findFirstByTripIdAndNameAndDepartureCheckedFalseOrderByIdAsc(trip.getId(), name)
                 .map(existing -> {
                     existing.packInto(bag.getId(), imageUrl, category);
+                    log.info("[scan] 체크리스트 항목 자동 체크 tripId={} itemId={} name={} bagId={}",
+                            trip.getId(), existing.getId(), name, bag.getId());
                     return existing;
                 })
                 .orElseGet(() -> {
+                    TripStep before = trip.getCurrentStep();
                     trip.advanceStepAtLeast(TripStep.ITEM_RECOGNITION);
-                    return bagItemRepository.save(BagItem.createRecognized(
+                    BagItem created = bagItemRepository.save(BagItem.createRecognized(
                             trip.getId(), memberId, name, category, bag.getId(), imageUrl));
+                    log.info("[scan] 체크리스트에 없던 물품을 새로 담음 tripId={} itemId={} name={} bagId={} step={}->{}",
+                            trip.getId(), created.getId(), name, bag.getId(), before, trip.getCurrentStep());
+                    return created;
                 });
     }
 
@@ -97,13 +119,17 @@ public class ScanService {
             return Optional.empty();
         }
         RiskLevelType type = parseRegulationType(regulationType);
-        return Optional.of(riskLevelRepository.findByLevel(type).orElseThrow(InvalidRegulationTypeException::new));
+        return Optional.of(riskLevelRepository.findByLevel(type).orElseThrow(() -> {
+            log.warn("[scan] RiskLevel 마스터에 {} 행이 없다 — RiskLevelInitializer 실행 여부를 확인할 것", type);
+            return new InvalidRegulationTypeException();
+        }));
     }
 
     private RiskLevelType parseRegulationType(String regulationType) {
         try {
             return RiskLevelType.valueOf(regulationType);
         } catch (IllegalArgumentException e) {
+            log.warn("[scan] 알 수 없는 regulationType={} — NONE/WARNING/VIOLATION만 받는다", regulationType);
             throw new InvalidRegulationTypeException();
         }
     }
@@ -111,9 +137,13 @@ public class ScanService {
     private void applyRiskLevel(Long bagItemId, Optional<RiskLevel> riskLevel) {
         if (riskLevel.isEmpty()) {
             bagItemRiskLevelRepository.deleteByBagItemId(bagItemId);
+            log.info("[scan] 위험도 없음(NONE) — 기존 위험도 행 제거 itemId={}", bagItemId);
             return;
         }
-        saveRiskLevel(bagItemId, riskLevel.get().getId());
+        RiskLevel level = riskLevel.get();
+        saveRiskLevel(bagItemId, level.getId());
+        log.info("[scan] 위험도 저장 itemId={} level={} step={}",
+                bagItemId, level.getLevel(), RiskCheckStep.ITEM_RECOGNITION);
     }
 
     private void saveRiskLevel(Long bagItemId, Long riskLevelId) {
@@ -126,6 +156,7 @@ public class ScanService {
 
     private void validateImage(MultipartFile image) {
         if (image == null || image.isEmpty()) {
+            log.warn("[scan] 이미지가 비어 있는 요청 — 등록을 거절한다");
             throw new InvalidScanImageException();
         }
     }
