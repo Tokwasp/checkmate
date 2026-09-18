@@ -20,14 +20,17 @@ import ssafy.checkmate.domain.checklist.entity.RiskLevel;
 import ssafy.checkmate.domain.checklist.entity.RiskLevelType;
 import ssafy.checkmate.domain.checklist.exception.BagItemAccessDeniedException;
 import ssafy.checkmate.domain.checklist.exception.BagItemBagMismatchException;
+import ssafy.checkmate.domain.checklist.exception.BagItemDeleteEmptyException;
 import ssafy.checkmate.domain.checklist.exception.BagItemNotFoundException;
 import ssafy.checkmate.domain.checklist.exception.BagItemUpdateEmptyException;
 import ssafy.checkmate.domain.checklist.repository.BagItemRepository;
 import ssafy.checkmate.domain.checklist.repository.BagItemRiskLevelRepository;
 import ssafy.checkmate.domain.checklist.repository.BagRepository;
+import ssafy.checkmate.domain.checklist.dto.response.InventoryItemsDeleteResponse;
 import ssafy.checkmate.domain.checklist.repository.RiskLevelRepository;
 import ssafy.checkmate.domain.checklist.service.InventoryService;
 import ssafy.checkmate.domain.trip.entity.Trip;
+import ssafy.checkmate.domain.trip.exception.TripAccessDeniedException;
 import ssafy.checkmate.domain.trip.repository.TripRepository;
 
 @SpringBootTest
@@ -155,6 +158,69 @@ class InventoryServiceTest {
         assertThatThrownBy(() -> inventoryService.deleteItem(99999L, MEMBER_ID))
                 .isInstanceOf(BagItemNotFoundException.class)
                 .hasMessage("존재하지 않는 인벤토리 물품입니다.");
+    }
+
+    @Test
+    @DisplayName("선택한 물품 여러 개를 한 번에 삭제하면 위험도 행도 모두 함께 지운다")
+    void deletesItemsInBulk() {
+        // given
+        Trip trip = saveTrip(MEMBER_ID);
+        Bag bag = saveBag(trip, MEMBER_ID);
+        BagItem knife = saveItem(bag, "맥가이버칼");
+        BagItem battery = saveItem(bag, "보조배터리");
+        BagItem kept = saveItem(bag, "슬리퍼");
+        RiskLevel warning = riskLevelRepository.findByLevel(RiskLevelType.WARNING).orElseThrow();
+        RiskLevel violation = riskLevelRepository.findByLevel(RiskLevelType.VIOLATION).orElseThrow();
+        bagItemRiskLevelRepository.save(
+                BagItemRiskLevel.create(knife.getId(), violation.getId(), RiskCheckStep.ITEM_RECOGNITION));
+        bagItemRiskLevelRepository.save(
+                BagItemRiskLevel.create(knife.getId(), warning.getId(), RiskCheckStep.SECURITY_CHECK));
+
+        // when
+        InventoryItemsDeleteResponse response =
+                inventoryService.deleteItems(trip.getId(), MEMBER_ID, List.of(knife.getId(), battery.getId()));
+
+        // then
+        assertThat(response.getDeletedCount()).isEqualTo(2);
+        assertThat(bagItemRepository.findById(knife.getId())).isEmpty();
+        assertThat(bagItemRepository.findById(battery.getId())).isEmpty();
+        assertThat(bagItemRepository.findById(kept.getId())).isPresent();
+        assertThat(bagItemRiskLevelRepository.findAll())
+                .noneMatch(risk -> risk.getBagItemId().equals(knife.getId()));
+    }
+
+    @Test
+    @DisplayName("삭제할 물품 ID가 비어 있으면 400으로 거절한다")
+    void rejectsBulkDeleteWithEmptyIds() {
+        Trip trip = saveTrip(MEMBER_ID);
+
+        assertThatThrownBy(() -> inventoryService.deleteItems(trip.getId(), MEMBER_ID, List.of()))
+                .isInstanceOf(BagItemDeleteEmptyException.class);
+    }
+
+    @Test
+    @DisplayName("일괄 삭제 시 하나라도 없거나 다른 여행 소속이면 전체를 거절한다")
+    void rejectsBulkDeleteWhenAnyItemMissingOrForeign() {
+        Trip trip = saveTrip(MEMBER_ID);
+        Trip otherTrip = saveTrip(MEMBER_ID);
+        BagItem mine = saveItem(saveBag(trip, MEMBER_ID), "보조배터리");
+        BagItem foreign = saveItem(saveBag(otherTrip, MEMBER_ID), "우산");
+
+        assertThatThrownBy(() -> inventoryService.deleteItems(trip.getId(), MEMBER_ID, List.of(mine.getId(), 99999L)))
+                .isInstanceOf(BagItemNotFoundException.class);
+        assertThatThrownBy(() -> inventoryService.deleteItems(trip.getId(), MEMBER_ID, List.of(mine.getId(), foreign.getId())))
+                .isInstanceOf(BagItemNotFoundException.class);
+        assertThat(bagItemRepository.findById(mine.getId())).isPresent();
+    }
+
+    @Test
+    @DisplayName("일괄 삭제 시 본인 여행이 아니면 403으로 거절한다")
+    void rejectsBulkDeleteByOtherMember() {
+        Trip trip = saveTrip(MEMBER_ID);
+        BagItem item = saveItem(saveBag(trip, MEMBER_ID), "보조배터리");
+
+        assertThatThrownBy(() -> inventoryService.deleteItems(trip.getId(), OTHER_MEMBER_ID, List.of(item.getId())))
+                .isInstanceOf(TripAccessDeniedException.class);
     }
 
     private BagItem saveItem(Bag bag, String name) {

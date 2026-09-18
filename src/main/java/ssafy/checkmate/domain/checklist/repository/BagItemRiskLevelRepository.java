@@ -14,6 +14,8 @@ public interface BagItemRiskLevelRepository extends JpaRepository<BagItemRiskLev
 
     void deleteByBagItemId(Long bagItemId);
 
+    void deleteAllByBagItemIdIn(List<Long> bagItemIds);
+
     @Query("""
             SELECT br.bagItemId AS bagItemId, rl.level AS level
             FROM BagItemRiskLevel br

@@ -141,6 +141,29 @@ class ChecklistServiceTest {
     }
 
     @Test
+    @DisplayName("체크리스트 조회 시 물품 인식 단계 위험도를 함께 반환하고, 위험도 없는 항목은 null이다")
+    void getChecklistWithRiskLevel() {
+        // given
+        Trip trip = createTrip(1L);
+        Bag defaultBag = bagRepository.save(Bag.createDefault(trip.getId(), 1L));
+        BagItem passport = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "여권", "서류", 1, defaultBag.getId()));
+        BagItem knife = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "맥가이버칼", "생활용품", 1, defaultBag.getId()));
+        RiskLevel forbidden = riskLevelRepository.save(RiskLevel.create(RiskLevelType.VIOLATION, "반입이 금지된 물품입니다."));
+        bagItemRiskLevelRepository.save(
+                BagItemRiskLevel.create(knife.getId(), forbidden.getId(), RiskCheckStep.ITEM_RECOGNITION));
+
+        // when
+        ChecklistResponse response = checklistService.getChecklist(trip.getId(), 1L, "전체");
+
+        // then
+        assertThat(response.getItems()).hasSize(2)
+                .extracting(ChecklistItemResponse::getItemId, ChecklistItemResponse::getRiskLevel)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple(passport.getId(), null),
+                        org.assertj.core.groups.Tuple.tuple(knife.getId(), "금지"));
+    }
+
+    @Test
     @DisplayName("체크리스트 조회 시 날씨와 항목을 함께 반환한다")
     void getChecklist() {
         // given

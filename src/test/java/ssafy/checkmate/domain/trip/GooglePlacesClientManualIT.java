@@ -29,7 +29,7 @@ import ssafy.checkmate.domain.trip.place.PlaceSuggestion;
  * 실행: 아래 @Disabled를 지우고
  *   ./gradlew test --tests "ssafy.checkmate.domain.trip.GooglePlacesClientManualIT"
  */
-//@Disabled("실제 Google Places 호출 — 카드 등록 후 .env 값으로 수동 확인할 때만 주석 해제")
+@Disabled("실제 Google Places 호출 — 카드 등록 후 .env 값으로 수동 확인할 때만 주석 해제")
 @SpringBootTest
 class GooglePlacesClientManualIT {
 
