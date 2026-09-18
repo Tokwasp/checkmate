@@ -19,7 +19,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
+import ssafy.checkmate.domain.checklist.dto.response.ChecklistBagResponse;
 import ssafy.checkmate.domain.checklist.dto.response.ChecklistItemResponse;
+import ssafy.checkmate.domain.checklist.dto.response.ChecklistItemSummaryResponse;
 import ssafy.checkmate.domain.checklist.dto.response.ChecklistItemsResponse;
 import ssafy.checkmate.domain.checklist.dto.response.ChecklistResponse;
 import ssafy.checkmate.domain.checklist.dto.response.InventoryBagResponse;
@@ -29,6 +31,7 @@ import ssafy.checkmate.domain.checklist.dto.response.InventoryItemsResponse;
 import ssafy.checkmate.domain.checklist.entity.Bag;
 import ssafy.checkmate.domain.checklist.entity.BagItem;
 import ssafy.checkmate.domain.checklist.entity.BagItemRiskLevel;
+import ssafy.checkmate.domain.checklist.entity.CarriageType;
 import ssafy.checkmate.domain.checklist.entity.RiskCheckStep;
 import ssafy.checkmate.domain.checklist.entity.RiskLevel;
 import ssafy.checkmate.domain.checklist.entity.RiskLevelType;
@@ -141,30 +144,48 @@ class ChecklistServiceTest {
     }
 
     @Test
-    @DisplayName("체크리스트 조회 시 물품 인식 단계 위험도를 함께 반환하고, 위험도 없는 항목은 null이다")
-    void getChecklistWithRiskLevel() {
+    @DisplayName("체크리스트 조회 시 여행의 가방 목록을 최상위 bags[]로 함께 반환한다")
+    void getChecklistWithBags() {
         // given
         Trip trip = createTrip(1L);
         Bag defaultBag = bagRepository.save(Bag.createDefault(trip.getId(), 1L));
-        BagItem passport = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "여권", "서류", 1, defaultBag.getId()));
-        BagItem knife = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "맥가이버칼", "생활용품", 1, defaultBag.getId()));
-        RiskLevel forbidden = riskLevelRepository.save(RiskLevel.create(RiskLevelType.VIOLATION, "반입이 금지된 물품입니다."));
-        bagItemRiskLevelRepository.save(
-                BagItemRiskLevel.create(knife.getId(), forbidden.getId(), RiskCheckStep.ITEM_RECOGNITION));
+        Bag carrier = bagRepository.save(Bag.create(trip.getId(), 1L, "내 캐리어"));
+        carrier.changeCarriageType(CarriageType.CABIN);
 
         // when
         ChecklistResponse response = checklistService.getChecklist(trip.getId(), 1L, "전체");
 
         // then
-        assertThat(response.getItems()).hasSize(2)
-                .extracting(ChecklistItemResponse::getItemId, ChecklistItemResponse::getRiskLevel)
+        assertThat(response.getBags()).hasSize(2)
+                .extracting(ChecklistBagResponse::getBagId, ChecklistBagResponse::getName, ChecklistBagResponse::getType)
                 .containsExactlyInAnyOrder(
-                        org.assertj.core.groups.Tuple.tuple(passport.getId(), null),
-                        org.assertj.core.groups.Tuple.tuple(knife.getId(), "금지"));
+                        org.assertj.core.groups.Tuple.tuple(defaultBag.getId(), "NONE", "NONE"),
+                        org.assertj.core.groups.Tuple.tuple(carrier.getId(), "내 캐리어", "기내"));
     }
 
     @Test
-    @DisplayName("체크리스트 조회 시 날씨와 항목을 함께 반환한다")
+    @DisplayName("체크리스트 조회 시 여행 기간 날씨를 하나로 요약해 반환하고, 우선순위는 눈 > 비 > 맑음이다")
+    void getChecklistWithWeatherSummary() {
+        // given
+        Trip trip = createTrip(1L);
+        tripWeatherRepository.save(TripWeather.of(trip.getId(),
+                new DailyWeather(trip.getStartDate(), WeatherType.RAINY, 10.0, 16.0, 70)));
+        tripWeatherRepository.save(TripWeather.of(trip.getId(),
+                new DailyWeather(trip.getStartDate().plusDays(1), WeatherType.SNOWY, 14.0, 26.0, 80)));
+
+        // when
+        ChecklistResponse response = checklistService.getChecklist(trip.getId(), 1L, "전체");
+
+        // then
+        assertThat(response.getWeather().getPrecipitationType()).isEqualTo("눈");
+        assertThat(response.getWeather().getPrecipitationDays()).isEqualTo(1);
+        assertThat(response.getWeather().getMinTemperature()).isEqualTo(12.0);
+        assertThat(response.getWeather().getMaxTemperature()).isEqualTo(21.0);
+        assertThat(response.getWeather().getMessage()).isEqualTo("❄️ 눈이 예정되어 있어요. 우산과 장갑, 미끄럼 방지 신발을 챙기시면 좋아요.");
+    }
+
+    @Test
+    @DisplayName("체크리스트 조회 시 항목은 itemId·name·checked·category·quantity·bagId만 반환한다")
     void getChecklist() {
         // given
         Trip trip = createTrip(1L);
@@ -172,18 +193,15 @@ class ChecklistServiceTest {
         Bag carrier = bagRepository.save(Bag.create(trip.getId(), 1L, "내 캐리어"));
         bagItemRepository.save(BagItem.create(trip.getId(), 1L, "여권", "서류", 1, defaultBag.getId()));
         bagItemRepository.save(BagItem.create(trip.getId(), 1L, "우산", "생활용품", 1, carrier.getId()));
-        tripWeatherRepository.save(TripWeather.of(trip.getId(),
-                new DailyWeather(trip.getStartDate(), WeatherType.SUNNY, 12.0, 21.0, 10)));
 
         // when
         ChecklistResponse response = checklistService.getChecklist(trip.getId(), 1L, "전체");
 
         // then
         assertThat(response.getStartDate()).isEqualTo(trip.getStartDate());
-        assertThat(response.getWeathers()).hasSize(1);
         assertThat(response.getItems()).hasSize(2)
-                .extracting(ChecklistItemResponse::getBagName)
-                .containsExactlyInAnyOrder("NONE", "내 캐리어");
+                .extracting(ChecklistItemSummaryResponse::getBagId)
+                .containsExactlyInAnyOrder(defaultBag.getId(), carrier.getId());
     }
 
     @Test
@@ -223,7 +241,7 @@ class ChecklistServiceTest {
 
         // then
         assertThat(response.getItems()).hasSize(1)
-                .extracting(ChecklistItemResponse::getName)
+                .extracting(ChecklistItemSummaryResponse::getName)
                 .containsExactly("여권");
         assertThat(response.getTotalCount()).isEqualTo(4);
         assertThat(response.getCheckedCount()).isEqualTo(1);
@@ -246,7 +264,7 @@ class ChecklistServiceTest {
 
         // then
         assertThat(response.getItems()).hasSize(1)
-                .extracting(ChecklistItemResponse::getName)
+                .extracting(ChecklistItemSummaryResponse::getName)
                 .containsExactly("양말");
     }
 

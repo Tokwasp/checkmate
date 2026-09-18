@@ -138,6 +138,14 @@ public class BagItem extends BaseEntity {
     }
 
     /**
+     * 카메라 인식(26번)으로 같은 가방에 이미 담긴 같은 이름 물건을 다시 인식한 경우.
+     * 새 행을 만들지 않고 같은 물건을 하나 더 인식한 것으로 보아 수량만 늘린다.
+     */
+    public void increaseQuantity(int amount) {
+        this.quantity += amount;
+    }
+
+    /**
      * 인벤토리 물품 수정(27번). 전달된 값만 반영하고 null인 필드는 기존 값을 유지한다.
      */
     public void updatePacking(Integer quantity, Boolean checked) {

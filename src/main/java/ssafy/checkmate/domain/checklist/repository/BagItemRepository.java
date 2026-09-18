@@ -14,8 +14,13 @@ public interface BagItemRepository extends JpaRepository<BagItem, Long> {
 
     List<BagItem> findAllByBagId(Long bagId);
 
-    /** 물품 인식 등록(26번)의 체크리스트 대조 — 이름이 같고 아직 안 담긴 항목 중 가장 먼저 만들어진 하나 */
-    Optional<BagItem> findFirstByTripIdAndNameAndDepartureCheckedFalseOrderByIdAsc(Long tripId, String name);
+    /** 물품 인식 등록(26번)의 체크리스트 대조 — 그 가방 안에서 이름이 같고 아직 안 담긴 항목 중 가장 먼저 만들어진 하나 */
+    Optional<BagItem> findFirstByTripIdAndBagIdAndNameAndDepartureCheckedFalseOrderByIdAsc(
+            Long tripId, Long bagId, String name);
+
+    /** 물품 인식 등록(26번)의 수량 합산 대조 — 그 가방 안에서 이름이 같고 이미 담긴 항목 중 가장 먼저 만들어진 하나 */
+    Optional<BagItem> findFirstByTripIdAndBagIdAndNameAndDepartureCheckedTrueOrderByIdAsc(
+            Long tripId, Long bagId, String name);
 
     long countByTripId(Long tripId);
 

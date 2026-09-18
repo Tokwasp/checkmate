@@ -12,22 +12,26 @@ public class ChecklistResponse {
     private final int totalCount;
     private final int checkedCount;
     private final int uncheckedCount;
-    private final List<WeatherResponse> weathers;
-    private final List<ChecklistItemResponse> items;
+    private final ChecklistWeatherResponse weather;
+    private final List<ChecklistBagResponse> bags;
+    private final List<ChecklistItemSummaryResponse> items;
 
     private ChecklistResponse(LocalDate startDate, LocalDate endDate, int totalCount, int checkedCount, int uncheckedCount,
-                               List<WeatherResponse> weathers, List<ChecklistItemResponse> items) {
+                               ChecklistWeatherResponse weather, List<ChecklistBagResponse> bags,
+                               List<ChecklistItemSummaryResponse> items) {
         this.startDate = startDate;
         this.endDate = endDate;
         this.totalCount = totalCount;
         this.checkedCount = checkedCount;
         this.uncheckedCount = uncheckedCount;
-        this.weathers = weathers;
+        this.weather = weather;
+        this.bags = bags;
         this.items = items;
     }
 
     public static ChecklistResponse of(LocalDate startDate, LocalDate endDate, int totalCount, int checkedCount, int uncheckedCount,
-                                        List<WeatherResponse> weathers, List<ChecklistItemResponse> items) {
-        return new ChecklistResponse(startDate, endDate, totalCount, checkedCount, uncheckedCount, weathers, items);
+                                        ChecklistWeatherResponse weather, List<ChecklistBagResponse> bags,
+                                        List<ChecklistItemSummaryResponse> items) {
+        return new ChecklistResponse(startDate, endDate, totalCount, checkedCount, uncheckedCount, weather, bags, items);
     }
 }

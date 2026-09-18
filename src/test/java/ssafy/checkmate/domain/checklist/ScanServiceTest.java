@@ -86,8 +86,34 @@ class ScanServiceTest {
     }
 
     @Test
-    @DisplayName("이미 담긴 항목만 있으면 새 물품을 담긴 상태로 만든다")
-    void createsItemWhenAllMatchingItemsArePacked() {
+    @DisplayName("같은 이름의 안 담긴 항목이 다른 가방에 있으면 매칭하지 않고 요청받은 가방에 새로 만든다")
+    void doesNotMatchItemInAnotherBag() {
+        // given
+        Trip trip = saveTrip(MEMBER_ID);
+        Bag defaultBag = bagRepository.save(Bag.createDefault(trip.getId(), MEMBER_ID));
+        Bag carrier = saveBag(trip, MEMBER_ID);
+        BagItem inOtherBag = bagItemRepository.save(
+                BagItem.create(trip.getId(), MEMBER_ID, "보조배터리", null, 2, defaultBag.getId()));
+
+        // when
+        ScanItemResponse response =
+                scanService.registerItem(MEMBER_ID, request(trip, carrier, "보조배터리", "WARNING"));
+
+        // then
+        assertThat(response.getItemId()).isNotEqualTo(inOtherBag.getId());
+        BagItem untouched = bagItemRepository.findById(inOtherBag.getId()).orElseThrow();
+        assertThat(untouched.isDepartureChecked()).isFalse();
+        assertThat(untouched.getBagId()).isEqualTo(defaultBag.getId());
+
+        BagItem created = bagItemRepository.findById(response.getItemId()).orElseThrow();
+        assertThat(created.getBagId()).isEqualTo(carrier.getId());
+        assertThat(created.isDepartureChecked()).isTrue();
+        assertThat(created.getQuantity()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("같은 가방에 이미 담긴 같은 이름 물건이 있으면 새로 만들지 않고 수량만 1 늘린다")
+    void increasesQuantityWhenAlreadyPackedInSameBag() {
         // given
         Trip trip = saveTrip(MEMBER_ID);
         Bag bag = saveBag(trip, MEMBER_ID);
@@ -98,13 +124,34 @@ class ScanServiceTest {
         ScanItemResponse response = scanService.registerItem(MEMBER_ID, request(trip, bag, "보조배터리", "WARNING"));
 
         // then
-        assertThat(response.getItemId()).isNotEqualTo(alreadyPacked.getId());
-        assertThat(bagItemRepository.findAllByTripId(trip.getId())).hasSize(2);
+        assertThat(response.getItemId()).isEqualTo(alreadyPacked.getId());
+        assertThat(bagItemRepository.findAllByTripId(trip.getId())).hasSize(1);
+
+        BagItem updated = bagItemRepository.findById(alreadyPacked.getId()).orElseThrow();
+        assertThat(updated.getQuantity()).isEqualTo(2);
+        assertThat(updated.isDepartureChecked()).isTrue();
+    }
+
+    @Test
+    @DisplayName("같은 이름의 담긴 물건이 다른 가방에 있으면 수량을 늘리지 않고 요청받은 가방에 새로 만든다")
+    void createsNewItemWhenPackedMatchIsInAnotherBag() {
+        // given
+        Trip trip = saveTrip(MEMBER_ID);
+        Bag defaultBag = bagRepository.save(Bag.createDefault(trip.getId(), MEMBER_ID));
+        Bag carrier = saveBag(trip, MEMBER_ID);
+        BagItem packedInOtherBag = bagItemRepository.save(
+                BagItem.createRecognized(trip.getId(), MEMBER_ID, "보조배터리", "전자기기", defaultBag.getId(), "already.png"));
+
+        // when
+        ScanItemResponse response =
+                scanService.registerItem(MEMBER_ID, request(trip, carrier, "보조배터리", "WARNING"));
+
+        // then
+        assertThat(response.getItemId()).isNotEqualTo(packedInOtherBag.getId());
+        assertThat(bagItemRepository.findById(packedInOtherBag.getId()).orElseThrow().getQuantity()).isEqualTo(1);
 
         BagItem created = bagItemRepository.findById(response.getItemId()).orElseThrow();
-        assertThat(created.isDepartureChecked()).isTrue();
-        assertThat(created.isFavorite()).isFalse();
-        assertThat(created.isReturnChecked()).isFalse();
+        assertThat(created.getBagId()).isEqualTo(carrier.getId());
         assertThat(created.getQuantity()).isEqualTo(1);
         assertThat(created.getCategory()).isEqualTo("전자기기");
     }
@@ -142,7 +189,7 @@ class ScanServiceTest {
     }
 
     @Test
-    @DisplayName("같은 물품을 다시 인식하면 인식 단계를 새 값으로 갱신한다")
+    @DisplayName("같은 가방에서 같은 물품을 다시 인식하면 그 행의 인식 단계를 새 값으로 갱신하고 수량도 늘어난다")
     void updatesRiskLevelOnRescan() {
         // given
         Trip trip = saveTrip(MEMBER_ID);
@@ -150,13 +197,14 @@ class ScanServiceTest {
         bagItemRepository.save(BagItem.create(trip.getId(), MEMBER_ID, "보조배터리", null, 1, bag.getId()));
         ScanItemResponse first = scanService.registerItem(MEMBER_ID, request(trip, bag, "보조배터리", "NONE"));
 
-        // when — 같은 물품이 이미 담긴 상태라 두 번째 인식은 새 행을 만든다
+        // when — 첫 인식으로 이미 담긴 상태이므로 두 번째 인식은 새 행을 만들지 않고 같은 행을 그대로 쓴다
         ScanItemResponse second = scanService.registerItem(MEMBER_ID, request(trip, bag, "보조배터리", "WARNING"));
 
-        // then — 위험도가 없는(NONE) 첫 번째 물품은 행 자체를 두지 않는다
-        assertThat(bagItemRiskLevelRepository.findByBagItemId(first.getItemId())).isEmpty();
+        // then
+        assertThat(second.getItemId()).isEqualTo(first.getItemId());
+        assertThat(bagItemRepository.findById(first.getItemId()).orElseThrow().getQuantity()).isEqualTo(2);
         RiskLevel warning = riskLevelRepository.findByLevel(RiskLevelType.WARNING).orElseThrow();
-        assertThat(bagItemRiskLevelRepository.findByBagItemId(second.getItemId()).orElseThrow().getRiskLevelId())
+        assertThat(bagItemRiskLevelRepository.findByBagItemId(first.getItemId()).orElseThrow().getRiskLevelId())
                 .isEqualTo(warning.getId());
     }
 

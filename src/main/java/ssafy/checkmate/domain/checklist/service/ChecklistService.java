@@ -17,14 +17,16 @@ import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemCreateRequest;
 import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemUpdateRequest;
 import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemsCreateRequest;
 import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemsMoveRequest;
+import ssafy.checkmate.domain.checklist.dto.response.ChecklistBagResponse;
 import ssafy.checkmate.domain.checklist.dto.response.ChecklistItemResponse;
+import ssafy.checkmate.domain.checklist.dto.response.ChecklistItemSummaryResponse;
 import ssafy.checkmate.domain.checklist.dto.response.ChecklistItemsResponse;
 import ssafy.checkmate.domain.checklist.dto.response.ChecklistResponse;
+import ssafy.checkmate.domain.checklist.dto.response.ChecklistWeatherResponse;
 import ssafy.checkmate.domain.checklist.dto.response.InventoryBagResponse;
 import ssafy.checkmate.domain.checklist.dto.response.InventoryBagsResponse;
 import ssafy.checkmate.domain.checklist.dto.response.InventoryItemResponse;
 import ssafy.checkmate.domain.checklist.dto.response.InventoryItemsResponse;
-import ssafy.checkmate.domain.checklist.dto.response.WeatherResponse;
 import ssafy.checkmate.domain.checklist.entity.Bag;
 import ssafy.checkmate.domain.checklist.entity.BagItem;
 import ssafy.checkmate.domain.checklist.entity.RiskCheckStep;
@@ -89,28 +91,24 @@ public class ChecklistService {
     public ChecklistResponse getChecklist(Long tripId, Long memberId, String checked) {
         Trip trip = findTripOwnedBy(tripId, memberId, "본인의 여행만 조회할 수 있습니다.");
 
-        List<WeatherResponse> weathers = findForecast(tripId).stream()
-                .map(WeatherResponse::of)
-                .toList();
+        ChecklistWeatherResponse weather =
+                ChecklistWeatherResponse.of(trip.getStartDate(), trip.getEndDate(), findForecast(tripId));
 
         List<BagItem> bagItems = bagItemRepository.findAllByTripId(tripId);
-        Map<Long, Bag> bagsById = findBagsByIds(bagItems.stream().map(BagItem::getBagId));
+        List<ChecklistBagResponse> bags = bagRepository.findAllByTripId(tripId).stream()
+                .map(ChecklistBagResponse::of)
+                .toList();
 
         int totalCount = sumQuantity(bagItems);
         int checkedCount = sumQuantity(bagItems.stream().filter(BagItem::isDepartureChecked).toList());
         int uncheckedCount = totalCount - checkedCount;
 
-        List<BagItem> filteredItems = filterByChecked(bagItems, checked);
-        Map<Long, String> riskLevelsByItemId =
-                findRiskLevelsByItemIds(filteredItems.stream().map(BagItem::getId).toList());
-
-        List<ChecklistItemResponse> items = filteredItems.stream()
-                .map(item -> ChecklistItemResponse.of(
-                        item, bagsById.get(item.getBagId()), riskLevelsByItemId.get(item.getId())))
+        List<ChecklistItemSummaryResponse> items = filterByChecked(bagItems, checked).stream()
+                .map(ChecklistItemSummaryResponse::of)
                 .toList();
 
         return ChecklistResponse.of(
-                trip.getStartDate(), trip.getEndDate(), totalCount, checkedCount, uncheckedCount, weathers, items);
+                trip.getStartDate(), trip.getEndDate(), totalCount, checkedCount, uncheckedCount, weather, bags, items);
     }
 
     @Transactional

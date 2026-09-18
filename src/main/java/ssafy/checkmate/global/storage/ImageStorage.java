@@ -11,7 +11,7 @@ public interface ImageStorage {
 
     /**
      * @param image     저장할 이미지
-     * @param directory 저장 경로 접두사 (예: inventory)
+     * @param directory 저장 경로 접두사 (예: 회원 ID — 회원별로 사진을 구분해 볼 수 있도록)
      * @return 저장된 이미지 접근 URL
      */
     String upload(MultipartFile image, String directory);

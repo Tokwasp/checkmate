@@ -48,7 +48,6 @@ public class ScanService {
 
     /** 물품 마스터에 없는 ID가 들어왔을 때 쓰는 기본 카테고리 — 인식 때문에 짐 싸기가 막히지 않도록 한다. */
     private static final String FALLBACK_CATEGORY = "기타";
-    private static final String IMAGE_DIRECTORY = "inventory";
     /** 온디바이스 판정 중 위험도가 없다는 뜻 — RiskLevel 마스터에는 없고, 행을 두지 않는 것으로 표현한다. */
     private static final String NO_RISK_REGULATION_TYPE = "NONE";
 
@@ -69,7 +68,7 @@ public class ScanService {
         Bag bag = findBagOwnedBy(request.getBagId(), memberId, trip.getId());
 
         String category = resolveCategory(request.getItemClassId());
-        String imageUrl = imageStorage.upload(request.getImage(), IMAGE_DIRECTORY);
+        String imageUrl = imageStorage.upload(request.getImage(), String.valueOf(memberId));
         log.info("[scan] 이미지 업로드 완료 tripId={} bagId={} category={} imageUrl={}",
                 trip.getId(), bag.getId(), category, imageUrl);
 
@@ -91,26 +90,39 @@ public class ScanService {
     }
 
     /**
-     * 체크리스트에 이름이 같고 아직 안 담긴 항목이 있으면 그것을 담긴 상태로 바꾸고,
-     * 없으면 담긴 상태의 물품을 새로 만든다.
+     * 요청받은 가방 안에서 이름이 같은 물건을 찾아 셋 중 하나로 처리한다.
+     * 1) 아직 안 담긴 항목이 있으면 → 그 항목을 담긴 상태로 바꾼다(체크리스트 대조, 수량 유지).
+     * 2) 이미 담긴 항목이 있으면 → 같은 물건을 하나 더 인식한 것으로 보아 새로 만들지 않고 수량만 +1.
+     * 3) 둘 다 없으면 → 그 가방에 수량 1짜리 새 물품을 만든다.
      */
     private BagItem packItem(Trip trip, Long memberId, Bag bag, String name, String category, String imageUrl) {
-        return bagItemRepository.findFirstByTripIdAndNameAndDepartureCheckedFalseOrderByIdAsc(trip.getId(), name)
-                .map(existing -> {
-                    existing.packInto(bag.getId(), imageUrl, category);
-                    log.info("[scan] 체크리스트 항목 자동 체크 tripId={} itemId={} name={} bagId={}",
-                            trip.getId(), existing.getId(), name, bag.getId());
-                    return existing;
-                })
-                .orElseGet(() -> {
-                    TripStep before = trip.getCurrentStep();
-                    trip.advanceStepAtLeast(TripStep.ITEM_RECOGNITION);
-                    BagItem created = bagItemRepository.save(BagItem.createRecognized(
-                            trip.getId(), memberId, name, category, bag.getId(), imageUrl));
-                    log.info("[scan] 체크리스트에 없던 물품을 새로 담음 tripId={} itemId={} name={} bagId={} step={}->{}",
-                            trip.getId(), created.getId(), name, bag.getId(), before, trip.getCurrentStep());
-                    return created;
-                });
+        Optional<BagItem> unchecked = bagItemRepository
+                .findFirstByTripIdAndBagIdAndNameAndDepartureCheckedFalseOrderByIdAsc(trip.getId(), bag.getId(), name);
+        if (unchecked.isPresent()) {
+            BagItem existing = unchecked.get();
+            existing.packInto(bag.getId(), imageUrl, category);
+            log.info("[scan] 체크리스트 항목 자동 체크 tripId={} itemId={} name={} bagId={}",
+                    trip.getId(), existing.getId(), name, bag.getId());
+            return existing;
+        }
+
+        Optional<BagItem> alreadyPacked = bagItemRepository
+                .findFirstByTripIdAndBagIdAndNameAndDepartureCheckedTrueOrderByIdAsc(trip.getId(), bag.getId(), name);
+        if (alreadyPacked.isPresent()) {
+            BagItem existing = alreadyPacked.get();
+            existing.increaseQuantity(1);
+            log.info("[scan] 같은 가방에 이미 담긴 동명 물건 — 수량만 증가 tripId={} itemId={} name={} bagId={} quantity={}",
+                    trip.getId(), existing.getId(), name, bag.getId(), existing.getQuantity());
+            return existing;
+        }
+
+        TripStep before = trip.getCurrentStep();
+        trip.advanceStepAtLeast(TripStep.ITEM_RECOGNITION);
+        BagItem created = bagItemRepository.save(BagItem.createRecognized(
+                trip.getId(), memberId, name, category, bag.getId(), imageUrl));
+        log.info("[scan] 체크리스트에 없던 물품을 새로 담음 tripId={} itemId={} name={} bagId={} step={}->{}",
+                trip.getId(), created.getId(), name, bag.getId(), before, trip.getCurrentStep());
+        return created;
     }
 
     /** 규정 타입 문자열을 검증하고, 위험(주의·금지)일 때만 그에 대응하는 RiskLevel 마스터 행을 찾아 돌려준다. */
