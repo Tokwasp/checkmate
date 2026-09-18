@@ -1,5 +1,6 @@
 package ssafy.checkmate.domain.checklist.service;
 
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -12,8 +13,9 @@ import ssafy.checkmate.domain.weather.DailyWeather;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * 15번(체크리스트 추천) 로직. 날씨·여행 목적을 프롬프트에 담아 GMS에게 추천 목록을
- * 받는다 — 규칙(우산·목적별 아이템)은 코드로 분기하지 않고 프롬프트로 지시한다.
+ * 15번(체크리스트 추천) 로직. 국가·항공편 여부·기간·날씨·목적을 프롬프트에 담아 GMS에게
+ * 추천 목록을 받는다 — 규칙(국내/해외, 기간별 수량, 우산, 목적별 아이템)은 코드로 분기하지 않고
+ * 프롬프트로 지시한다. 규칙을 바꾸려면 아래 SYSTEM_PROMPT 만 고치면 된다.
  */
 @Slf4j
 @Component
@@ -22,14 +24,40 @@ public class ChecklistRecommendationEngine {
 
     private static final String SYSTEM_PROMPT = """
             당신은 여행 짐 싸기를 도와주는 어시스턴트입니다. 여행 정보와 날짜별 날씨 예보를 보고
-            챙겨야 할 물건 목록을 추천하세요.
+            실제로 가방에 넣을 물건 목록을 추천하세요.
 
-            규칙:
-            1. 예보 중 하루라도 날씨가 "비" 또는 "눈"이면 반드시 "우산"을 목록에 포함하세요.
-            2. 여행 목적에 어울리는 물건을 목적마다 추가하세요(예: 수영이면 수영복·물안경,
-               캠핑이면 텐트·손전등).
-            3. 여권처럼 목적·날씨와 무관하게 항상 필요한 물건도 포함하세요.
-            4. 같은 물건을 중복해서 넣지 마세요.
+            [1] 국내 여행과 해외 여행을 반드시 구분하세요
+            - 목적지 국가가 "대한민국"이면 **국내 여행**입니다. 항공편을 타더라도(제주 등) 국내입니다.
+              · 여권, 비자, 여행용 멀티 어댑터, 환전한 외화, 해외용 유심/로밍은 **절대 넣지 마세요**.
+              · 신분증, 교통카드처럼 국내에서 쓰는 것을 넣으세요.
+            - 목적지 국가가 대한민국이 아니면 **해외 여행**입니다.
+              · 여권은 반드시 넣으세요. 그 나라 콘센트 규격에 맞는 어댑터, 해외 결제 카드,
+                유심/로밍, 상비약을 함께 고려하세요.
+            - 항공편을 탄다면 기내 반입 제한을 고려하세요(액체류는 100ml 이하 용기).
+              항공편을 타지 않는다면 기내 관련 물건(목베개, 기내 슬리퍼 등)은 넣지 마세요.
+
+            [2] 기간에 맞는 수량을 넣으세요 — 수량은 "며칠"에서 나옵니다
+            - 상의·속옷·양말: 여행 일수만큼. 단 7일을 넘으면 7개까지만 넣고 세탁을 전제하세요.
+            - 하의: 2~3일에 1벌 (3박 4일이면 2벌).
+            - 잠옷: 3일까지 1벌, 그보다 길면 2벌.
+            - 세면도구·충전기처럼 하나면 되는 물건은 기간과 무관하게 1개입니다.
+
+            [3] 날씨에 맞추세요
+            - 예보 중 하루라도 "비" 또는 "눈"이거나 강수확률이 60% 이상인 날이 있으면 "우산"을 반드시 넣으세요.
+            - 최고 기온이 28도 이상이면 반팔·선크림·모자를, 최저 기온이 5도 이하이면 패딩·목도리·장갑을 넣으세요.
+            - 최저와 최고 기온 차가 10도 이상이면 겉옷(가디건·바람막이)을 넣으세요.
+            - 실제 예보에 없는 날씨를 가정하지 마세요.
+
+            [4] 여행 목적마다 물건을 더하세요
+            - 예: 수영이면 수영복·물안경·비치타월, 등산이면 등산화·아이젠, 비즈니스면 정장·노트북.
+            - 목적이 "미정"이면 목적 전용 물건은 넣지 마세요.
+
+            [5] 공통 규칙
+            - 같은 물건을 두 번 넣지 마세요. 비슷한 물건도 하나로 합치세요("충전기"와 "휴대폰 충전기"는 하나).
+            - 이름은 사람이 가방에 넣을 수 있는 구체적인 물건이어야 합니다. "필요한 서류" 같은 뭉뚱그린 이름은 안 됩니다.
+            - 이름은 12자 이내의 한국어로 쓰세요.
+            - 15~25개 사이로 추천하세요. 너무 적으면 빠진 것이 생기고, 너무 많으면 사용자가 지우느라 지칩니다.
+            - category 는 반드시 다음 다섯 중 하나입니다: "의류", "전자기기", "생활용품", "서류", "기타"
 
             다른 설명이나 마크다운 코드블록 없이, 아래 형식의 JSON 배열만 응답하세요:
             [{"name": "물건 이름", "category": "카테고리", "quantity": 1}]
@@ -48,10 +76,26 @@ public class ChecklistRecommendationEngine {
         }
     }
 
+    /**
+     * 모델에게 넘기는 여행 정보.
+     *
+     * 국가·항공편 여부·기간은 시스템 프롬프트의 [1]·[2] 규칙이 그대로 쓰는 값이라 반드시 넣는다
+     * (2026-09-18). 예전에는 목적지·기간·목적·날씨만 넘겨서, 모델이 국내/해외를 알 수 없어
+     * 부산 여행에도 여권을 추천했다.
+     */
     private String buildUserPrompt(Trip trip, List<DailyWeather> forecast) {
         StringBuilder prompt = new StringBuilder();
-        prompt.append("목적지: ").append(trip.getCountry()).append(' ').append(trip.getRegion()).append('\n');
-        prompt.append("기간: ").append(trip.getStartDate()).append(" ~ ").append(trip.getEndDate()).append('\n');
+        prompt.append("목적지 국가: ").append(trip.getCountry()).append('\n');
+        prompt.append("목적지 도시/지역: ").append(trip.getRegion()).append('\n');
+        prompt.append("기간: ").append(trip.getStartDate()).append(" ~ ").append(trip.getEndDate());
+        // 날짜가 비어 있으면(있어선 안 되지만) 박/일만 빼고 나머지는 그대로 보낸다 —
+        // 여기서 터지면 recommend()의 catch가 삼켜서 체크리스트가 통째로 비어 버린다
+        if (trip.getStartDate() != null && trip.getEndDate() != null) {
+            long nights = Math.max(0, ChronoUnit.DAYS.between(trip.getStartDate(), trip.getEndDate()));
+            prompt.append(" (").append(nights).append("박 ").append(nights + 1).append("일)");
+        }
+        prompt.append('\n');
+        prompt.append("항공편 이용: ").append(trip.isHasFlight() ? "예" : "아니오").append('\n');
         prompt.append("여행 목적: ")
                 .append(trip.getPurposes().isEmpty() ? "미정" : String.join(", ", trip.getPurposes()))
                 .append('\n');
