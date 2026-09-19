@@ -37,6 +37,8 @@ dependencies {
 	runtimeOnly   'io.jsonwebtoken:jjwt-jackson:0.13.0'
 	implementation platform("software.amazon.awssdk:bom:2.46.8") // 물품 인식 등록(26번) 이미지 S3 업로드
 	implementation "software.amazon.awssdk:s3"
+	implementation "software.amazon.awssdk:bedrockagentruntime" // 반입 규정 검사(30번) 지식베이스 검색
+	implementation "software.amazon.awssdk:bedrockruntime"      // 반입 규정 검사(30번) 판정 생성
 }
 
 tasks.named('test') {

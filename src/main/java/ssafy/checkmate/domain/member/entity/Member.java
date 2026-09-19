@@ -36,6 +36,16 @@ public class Member extends BaseEntity {
     @Column(nullable = false)
     private Role role;
 
+    /**
+     * 반입 규정 검사(30번)를 호출한 누적 횟수. 계정당 상한을 두어 Bedrock 비용이 무한정
+     * 늘어나는 것을 막는다. 상한 값과 증가 시점은
+     * {@code SecurityCheckService}가 관리하고, 증가는 조건부 UPDATE 한 문장으로 원자적으로
+     * 처리한다({@code MemberRepository#consumeSecurityCheckQuota}) — 조회 후 증가로 나누면
+     * 동시 요청 두 개가 같은 횟수를 읽고 둘 다 통과한다.
+     */
+    @Column(nullable = false, columnDefinition = "INT NOT NULL DEFAULT 0")
+    private int securityCheckCount = 0;
+
     @Builder
     public Member(String email, String nickname, String profileImageUrl, Provider provider) {
         this.email = email;
@@ -43,5 +53,6 @@ public class Member extends BaseEntity {
         this.profileImageUrl = profileImageUrl;
         this.provider = provider;
         this.role = Role.USER;
+        this.securityCheckCount = 0;
     }
 }

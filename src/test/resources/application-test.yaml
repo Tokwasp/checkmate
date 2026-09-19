@@ -22,3 +22,10 @@ storage:
   access-key: ""
   secret-key: ""
   base-url: ""
+
+bedrock:
+  region: ap-northeast-2
+  knowledge-base-id: test-knowledge-base
+  model-id: test-model
+  number-of-results: 12
+  max-tokens: 4000

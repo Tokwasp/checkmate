@@ -49,3 +49,12 @@ storage:
   region: ${AWS_S3_REGION:ap-northeast-2}
   base-url: ${AWS_S3_BASE_URL:}
 
+# 반입 규정 검사(30번). knowledge-base-id가 비어 있으면 검사 요청이 실패한다.
+bedrock:
+  region: ${AWS_BEDROCK_REGION:ap-northeast-2}
+  knowledge-base-id: ${BEDROCK_KB_ID:}
+  # Sonnet 4.6과 정확도가 같으면서 비용 1/3 (46케이스 x 3회 비교, RAG_검색품질_모델선정_리포트.md)
+  model-id: ${BEDROCK_MODEL_ID:global.anthropic.claude-haiku-4-5-20251001-v1:0}
+  # 물품 이름 하나당 가져올 청크 수(물품별로 따로 검색한다)
+  number-of-results: ${BEDROCK_SEARCH_RESULTS:15}
+  max-tokens: ${BEDROCK_MAX_TOKENS:4000}
