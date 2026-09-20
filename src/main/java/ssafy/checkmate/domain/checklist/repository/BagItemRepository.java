@@ -24,6 +24,13 @@ public interface BagItemRepository extends JpaRepository<BagItem, Long> {
     Optional<BagItem> findFirstByTripIdAndBagIdAndNameAndDepartureCheckedFalseOrderByIdAsc(
             Long tripId, Long bagId, String name);
 
+    /**
+     * 물품 인식 등록(26번)의 체크리스트 대조 2차 — 가방을 가리지 않고 그 여행에서 이름이 같고 아직 안 담긴 항목.
+     * 체크리스트를 처음 만들면 모든 항목이 기본 가방(NONE)에 있으므로, 인식 화면에서 고른 가방과 다를 수밖에 없다.
+     * 그 항목을 새로 만들지 않고 고른 가방으로 옮겨 담기 위해 쓴다 (2026-09-20).
+     */
+    Optional<BagItem> findFirstByTripIdAndNameAndDepartureCheckedFalseOrderByIdAsc(Long tripId, String name);
+
     /** 물품 인식 등록(26번)의 수량 합산 대조 — 그 가방 안에서 이름이 같고 이미 담긴 항목 중 가장 먼저 만들어진 하나 */
     Optional<BagItem> findFirstByTripIdAndBagIdAndNameAndDepartureCheckedTrueOrderByIdAsc(
             Long tripId, Long bagId, String name);

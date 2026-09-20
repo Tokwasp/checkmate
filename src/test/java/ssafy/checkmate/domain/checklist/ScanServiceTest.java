@@ -86,8 +86,8 @@ class ScanServiceTest {
     }
 
     @Test
-    @DisplayName("같은 이름의 안 담긴 항목이 다른 가방에 있으면 매칭하지 않고 요청받은 가방에 새로 만든다")
-    void doesNotMatchItemInAnotherBag() {
+    @DisplayName("같은 이름의 안 담긴 항목이 다른 가방(기본 가방)에 있으면 새로 만들지 않고 요청받은 가방으로 옮겨 담는다")
+    void movesUncheckedItemFromAnotherBag() {
         // given
         Trip trip = saveTrip(MEMBER_ID);
         Bag defaultBag = bagRepository.save(Bag.createDefault(trip.getId(), MEMBER_ID));
@@ -100,15 +100,13 @@ class ScanServiceTest {
                 scanService.registerItem(MEMBER_ID, request(trip, carrier, "보조배터리", "WARNING"));
 
         // then
-        assertThat(response.getItemId()).isNotEqualTo(inOtherBag.getId());
-        BagItem untouched = bagItemRepository.findById(inOtherBag.getId()).orElseThrow();
-        assertThat(untouched.isDepartureChecked()).isFalse();
-        assertThat(untouched.getBagId()).isEqualTo(defaultBag.getId());
-
-        BagItem created = bagItemRepository.findById(response.getItemId()).orElseThrow();
-        assertThat(created.getBagId()).isEqualTo(carrier.getId());
-        assertThat(created.isDepartureChecked()).isTrue();
-        assertThat(created.getQuantity()).isEqualTo(1);
+        assertThat(response.getItemId()).isEqualTo(inOtherBag.getId());
+        BagItem moved = bagItemRepository.findById(inOtherBag.getId()).orElseThrow();
+        assertThat(moved.isDepartureChecked()).isTrue();
+        assertThat(moved.getBagId()).isEqualTo(carrier.getId());
+        assertThat(moved.getImageUrl()).isNotBlank();
+        assertThat(moved.getQuantity()).isEqualTo(2);
+        assertThat(bagItemRepository.findAllByTripId(trip.getId())).hasSize(1);
     }
 
     @Test

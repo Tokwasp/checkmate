@@ -90,16 +90,19 @@ public class ScanService {
     }
 
     /**
-     * 요청받은 가방 안에서 이름이 같은 물건을 찾아 셋 중 하나로 처리한다.
-     * 1) 아직 안 담긴 항목이 있으면 → 그 항목을 담긴 상태로 바꾼다(체크리스트 대조, 수량 유지).
-     * 2) 이미 담긴 항목이 있으면 → 같은 물건을 하나 더 인식한 것으로 보아 새로 만들지 않고 수량만 +1.
-     * 3) 둘 다 없으면 → 그 가방에 수량 1짜리 새 물품을 만든다.
+     * 이름이 같은 물건을 찾아 넷 중 하나로 처리한다 (2026-09-20 개정).
+     * 1) 요청받은 가방에 아직 안 담긴 항목이 있으면 → 그 항목을 담긴 상태로 바꾼다(체크리스트 대조, 수량 유지).
+     * 2) 요청받은 가방에 이미 담긴 항목이 있으면 → 같은 물건을 하나 더 인식한 것으로 보아 수량만 +1.
+     * 3) 다른 가방(주로 기본 가방 NONE)에 아직 안 담긴 항목이 있으면 → 새로 만들지 않고 그 항목을
+     *    요청받은 가방으로 옮겨 담는다. 체크리스트를 처음 만들면 모든 항목이 NONE에 있고, 인식은
+     *    항상 가방을 고른 채로 하기 때문에 이 경우가 사실상 기본 경로다.
+     * 4) 어디에도 없으면 → 그 가방에 수량 1짜리 새 물품을 만든다.
      */
     private BagItem packItem(Trip trip, Long memberId, Bag bag, String name, String category, String imageUrl) {
-        Optional<BagItem> unchecked = bagItemRepository
+        Optional<BagItem> uncheckedHere = bagItemRepository
                 .findFirstByTripIdAndBagIdAndNameAndDepartureCheckedFalseOrderByIdAsc(trip.getId(), bag.getId(), name);
-        if (unchecked.isPresent()) {
-            BagItem existing = unchecked.get();
+        if (uncheckedHere.isPresent()) {
+            BagItem existing = uncheckedHere.get();
             existing.packInto(bag.getId(), imageUrl, category);
             log.info("[scan] 체크리스트 항목 자동 체크 tripId={} itemId={} name={} bagId={}",
                     trip.getId(), existing.getId(), name, bag.getId());
@@ -113,6 +116,17 @@ public class ScanService {
             existing.increaseQuantity(1);
             log.info("[scan] 같은 가방에 이미 담긴 동명 물건 — 수량만 증가 tripId={} itemId={} name={} bagId={} quantity={}",
                     trip.getId(), existing.getId(), name, bag.getId(), existing.getQuantity());
+            return existing;
+        }
+
+        Optional<BagItem> uncheckedElsewhere = bagItemRepository
+                .findFirstByTripIdAndNameAndDepartureCheckedFalseOrderByIdAsc(trip.getId(), name);
+        if (uncheckedElsewhere.isPresent()) {
+            BagItem existing = uncheckedElsewhere.get();
+            Long from = existing.getBagId();
+            existing.packInto(bag.getId(), imageUrl, category);
+            log.info("[scan] 다른 가방의 체크리스트 항목을 옮겨 담음 tripId={} itemId={} name={} bagId={}->{}",
+                    trip.getId(), existing.getId(), name, from, bag.getId());
             return existing;
         }
 
