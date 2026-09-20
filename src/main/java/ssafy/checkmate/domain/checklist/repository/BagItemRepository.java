@@ -41,6 +41,21 @@ public interface BagItemRepository extends JpaRepository<BagItem, Long> {
 
     long countByBagIdAndDepartureChecked(Long bagId, boolean departureChecked);
 
+    /**
+     * 회원이 지금까지 담은(departureChecked) 물품을 이름별로 센다 — 마이페이지 「내 물건」의 담은 횟수.
+     * 여행을 가로질러 세므로 tripId 조건이 없다. 행 수를 세므로 수량(quantity)은 보지 않는다:
+     * "여권을 세 여행에 담았다" 는 3 이고, "양말을 한 번에 다섯 켤레 담았다" 는 1 이다.
+     * 분류는 이름마다 하나만 대표로 든다(MAX) — 같은 이름이 여행마다 다르게 분류될 수 있기 때문.
+     */
+    @Query("""
+            SELECT b.name AS name, MAX(b.category) AS category, COUNT(b) AS packedCount
+            FROM BagItem b
+            WHERE b.memberId = :memberId
+              AND b.departureChecked = true
+            GROUP BY b.name
+            """)
+    List<PackedNameCount> countPackedByMember(@Param("memberId") Long memberId);
+
     void deleteAllByTripId(Long tripId);
 
     @Query("SELECT DISTINCT b.category FROM BagItem b WHERE b.tripId = :tripId AND b.departureChecked = true")
