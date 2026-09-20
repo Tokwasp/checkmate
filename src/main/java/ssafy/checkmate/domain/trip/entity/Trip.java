@@ -47,6 +47,12 @@ public class Trip extends BaseEntity {
 
     private String arrivalAirline;
 
+    /**
+     * 여행 표지 사진 URL. 마이페이지 여행 기록 폴라로이드가 쓴다. 사용자가 고르지 않으면 null 이고
+     * 화면이 기본 그림으로 대신한다. 생성·수정 요청에는 없다 — 표지 API(PUT/DELETE .../cover)로만 바뀐다.
+     */
+    private String coverImageUrl;
+
     /** Google Places Details로 확인한 목적지 좌표. 날씨 조회 시 지오코딩 없이 바로 쓴다. */
     private Double latitude;
 
@@ -79,6 +85,11 @@ public class Trip extends BaseEntity {
 
     public boolean isOwnedBy(Long memberId) {
         return this.memberId.equals(memberId);
+    }
+
+    /** 표지 사진 URL 을 바꾼다. null 이면 기본 그림으로 돌아간다 (표지 삭제). */
+    public void updateCoverImage(String coverImageUrl) {
+        this.coverImageUrl = coverImageUrl;
     }
 
     /** PUT 수정 — 전달된 값으로 전체 교체(부분 수정 아님, 여행 생성과 동일한 요청 형식). */

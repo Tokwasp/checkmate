@@ -21,12 +21,14 @@ public class TripSummaryResponse {
     private final int currentStep;
     private final int totalStep;
     private final String currentStepName;
+    /** 여행 표지 사진. 안 골랐으면 null */
+    private final String coverImageUrl;
     private final List<TripWeatherResponse> weathers;
 
     private TripSummaryResponse(Long tripId, String country, String region, LocalDate startDate, LocalDate endDate,
                                  int packedItemCount, int totalItemCount, TripType tripType,
                                  int currentStep, int totalStep, String currentStepName,
-                                 List<TripWeatherResponse> weathers) {
+                                 String coverImageUrl, List<TripWeatherResponse> weathers) {
         this.tripId = tripId;
         this.country = country;
         this.region = region;
@@ -38,6 +40,7 @@ public class TripSummaryResponse {
         this.currentStep = currentStep;
         this.totalStep = totalStep;
         this.currentStepName = currentStepName;
+        this.coverImageUrl = coverImageUrl;
         this.weathers = weathers;
     }
 
@@ -46,6 +49,7 @@ public class TripSummaryResponse {
         TripStep step = trip.getCurrentStep();
         return new TripSummaryResponse(trip.getId(), trip.getCountry(), trip.getRegion(), trip.getStartDate(),
                 trip.getEndDate(), packedItemCount, totalItemCount, trip.getType(today),
-                step.getOrder(), TripStep.totalStepCount(), step.getDisplayName(), weathers);
+                step.getOrder(), TripStep.totalStepCount(), step.getDisplayName(),
+                trip.getCoverImageUrl(), weathers);
     }
 }

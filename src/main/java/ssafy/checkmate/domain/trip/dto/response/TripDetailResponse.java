@@ -18,6 +18,8 @@ public class TripDetailResponse {
     private final String departureAirline;
     /** 귀국(입국) 항공사. 항공편 없는 여행은 null. */
     private final String arrivalAirline;
+    /** 여행 표지 사진. 안 골랐으면 null */
+    private final String coverImageUrl;
     private final int currentStep;
     private final int totalStep;
     private final String currentStepName;
@@ -31,7 +33,7 @@ public class TripDetailResponse {
     private final List<TripBagResponse> bags;
 
     private TripDetailResponse(TripType tripType, String country, String region, LocalDate startDate, LocalDate endDate,
-                                String departureAirline, String arrivalAirline,
+                                String departureAirline, String arrivalAirline, String coverImageUrl,
                                 int currentStep, int totalStep, String currentStepName,
                                 int totalItemCount, int recognizedItemCount, int leftBehindCount,
                                 List<TripBagResponse> bags) {
@@ -42,6 +44,7 @@ public class TripDetailResponse {
         this.endDate = endDate;
         this.departureAirline = departureAirline;
         this.arrivalAirline = arrivalAirline;
+        this.coverImageUrl = coverImageUrl;
         this.currentStep = currentStep;
         this.totalStep = totalStep;
         this.currentStepName = currentStepName;
@@ -55,7 +58,7 @@ public class TripDetailResponse {
                                          int leftBehindCount, List<TripBagResponse> bags) {
         TripStep step = trip.getCurrentStep();
         return new TripDetailResponse(trip.getType(today), trip.getCountry(), trip.getRegion(), trip.getStartDate(),
-                trip.getEndDate(), trip.getDepartureAirline(), trip.getArrivalAirline(),
+                trip.getEndDate(), trip.getDepartureAirline(), trip.getArrivalAirline(), trip.getCoverImageUrl(),
                 step.getOrder(), TripStep.totalStepCount(), step.getDisplayName(),
                 totalItemCount, recognizedItemCount, leftBehindCount, bags);
     }
