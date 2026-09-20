@@ -55,4 +55,9 @@ public class Member extends BaseEntity {
         this.role = Role.USER;
         this.securityCheckCount = 0;
     }
+
+    /** 프로필 사진 URL 을 바꾼다. null 이면 기본 아이콘으로 돌아간다 (마이페이지 사진 삭제). */
+    public void updateProfileImage(String profileImageUrl) {
+        this.profileImageUrl = profileImageUrl;
+    }
 }
