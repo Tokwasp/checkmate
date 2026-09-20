@@ -10,9 +10,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ssafy.checkmate.domain.checklist.repository.BagItemRepository;
 import ssafy.checkmate.domain.checklist.repository.PackedNameCount;
+import ssafy.checkmate.domain.member.dto.request.MemberFavoriteItemRequest;
 import ssafy.checkmate.domain.member.dto.response.MemberItemResponse;
 import ssafy.checkmate.domain.member.dto.response.MemberItemsResponse;
 import ssafy.checkmate.domain.member.entity.MemberItem;
+import ssafy.checkmate.domain.member.exception.MemberItemAccessDeniedException;
+import ssafy.checkmate.domain.member.exception.MemberItemNotFoundException;
 import ssafy.checkmate.domain.member.repository.MemberItemRepository;
 
 /**
@@ -76,5 +79,39 @@ public class MemberItemService {
                         .thenComparing(MemberItemResponse::name))
                 .toList();
         return MemberItemsResponse.of(items);
+    }
+
+    /** 즐겨찾기 켜기/끄기. 본인 물건이 아니면 403, 없으면 404. 응답은 목록의 한 줄과 같은 모양. */
+    @Transactional
+    public MemberItemResponse setFavorite(Long memberId, Long itemId, boolean favorite) {
+        MemberItem item = memberItemRepository.findById(itemId).orElseThrow(MemberItemNotFoundException::new);
+        if (!item.isOwnedBy(memberId)) {
+            throw new MemberItemAccessDeniedException();
+        }
+        item.setFavorite(favorite);
+        long packedCount = bagItemRepository.countByMemberIdAndNameAndDepartureChecked(memberId, item.getName(), true);
+        return MemberItemResponse.of(item, packedCount);
+    }
+
+    /**
+     * 여러 물건을 한 번에 즐겨찾기로 — 가방 인벤토리의 「즐겨찾기」 가 부른다.
+     *
+     * id 가 아니라 이름으로 받는다. 인벤토리 물건은 카메라가 찾아준 것이라 마스터에 아직 없을 수
+     * 있다 — 있으면 별만 켜고(분류가 비어 있으면 채우고) 없으면 새로 만든다. 요청 안에 같은 이름이
+     * 두 번 있어도 두 번째는 첫 번째가 만든 행을 찾아 켜기만 하므로 중복 행이 생기지 않는다.
+     * 응답은 갱신된 목록 전체다 — 화면이 별 하나 켜고 목록을 다시 안 불러도 되게.
+     */
+    @Transactional
+    public MemberItemsResponse addFavorites(Long memberId, List<MemberFavoriteItemRequest> requests) {
+        for (MemberFavoriteItemRequest request : requests) {
+            MemberItem existing = memberItemRepository.findByMemberIdAndName(memberId, request.getName()).orElse(null);
+            if (existing == null) {
+                memberItemRepository.save(MemberItem.asFavorite(memberId, request.getName(), request.getCategory()));
+            } else {
+                existing.setFavorite(true);
+                existing.fillCategoryIfEmpty(request.getCategory());
+            }
+        }
+        return getMyItems(memberId);
     }
 }

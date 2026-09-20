@@ -1,7 +1,12 @@
 package ssafy.checkmate.domain.member;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
+
+import tools.jackson.databind.ObjectMapper;
+import java.util.HashMap;
+import java.util.Map;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -15,9 +20,12 @@ import ssafy.checkmate.domain.checklist.entity.Bag;
 import ssafy.checkmate.domain.checklist.entity.BagItem;
 import ssafy.checkmate.domain.checklist.repository.BagItemRepository;
 import ssafy.checkmate.domain.checklist.repository.BagRepository;
+import ssafy.checkmate.domain.member.dto.request.MemberFavoriteItemRequest;
 import ssafy.checkmate.domain.member.dto.response.MemberItemResponse;
 import ssafy.checkmate.domain.member.dto.response.MemberItemsResponse;
 import ssafy.checkmate.domain.member.entity.MemberItem;
+import ssafy.checkmate.domain.member.exception.MemberItemAccessDeniedException;
+import ssafy.checkmate.domain.member.exception.MemberItemNotFoundException;
 import ssafy.checkmate.domain.member.repository.MemberItemRepository;
 import ssafy.checkmate.domain.member.service.MemberItemService;
 import ssafy.checkmate.domain.trip.entity.Trip;
@@ -112,6 +120,77 @@ class MemberItemServiceTest {
     @DisplayName("담은 것도 즐겨찾기도 없으면 빈 목록이다")
     void getMyItemsEmpty() {
         assertThat(memberItemService.getMyItems(99L).items()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("즐겨찾기를 켜고 끄면 그 물건 한 줄이 담은 횟수와 함께 돌아온다")
+    void setFavorite() {
+        // given — 여권을 한 번 담아 마스터에 올라오게 한다
+        Long me = 1L;
+        Trip trip = createTrip(me, "도쿄");
+        Long bag = bagRepository.save(Bag.createDefault(trip.getId(), me)).getId();
+        pack(trip.getId(), me, "여권", "서류", bag);
+        Long passportId = memberItemService.getMyItems(me).items().get(0).itemId();
+
+        // when
+        MemberItemResponse on = memberItemService.setFavorite(me, passportId, true);
+        MemberItemResponse off = memberItemService.setFavorite(me, passportId, false);
+
+        // then
+        assertThat(on.isFavorite()).isTrue();
+        assertThat(on.name()).isEqualTo("여권");
+        assertThat(on.packedCount()).isEqualTo(1L);
+        assertThat(off.isFavorite()).isFalse();
+        assertThat(memberItemRepository.findById(passportId).orElseThrow().isFavorite()).isFalse();
+    }
+
+    @Test
+    @DisplayName("없는 물건이면 404, 남의 물건이면 403 이다")
+    void setFavoriteRejects() {
+        MemberItem others = memberItemRepository.save(MemberItem.asFavorite(2L, "남의 여권", "서류"));
+
+        assertThatThrownBy(() -> memberItemService.setFavorite(1L, 999_999L, true))
+                .isInstanceOf(MemberItemNotFoundException.class);
+        assertThatThrownBy(() -> memberItemService.setFavorite(1L, others.getId(), true))
+                .isInstanceOf(MemberItemAccessDeniedException.class);
+        // 거절됐으니 남의 물건은 그대로다
+        assertThat(memberItemRepository.findById(others.getId()).orElseThrow().isFavorite()).isTrue();
+    }
+
+    @Test
+    @DisplayName("이름으로 여러 개 즐겨찾기하면 있는 것은 별만 켜고 없는 것은 새로 만들며, 중복 이름도 한 행이다")
+    void addFavorites() {
+        // given — 여권은 담은 적이 있어 마스터에 있고(분류 없이), 선글라스는 처음 보는 이름
+        Long me = 1L;
+        Trip trip = createTrip(me, "도쿄");
+        Long bag = bagRepository.save(Bag.createDefault(trip.getId(), me)).getId();
+        pack(trip.getId(), me, "여권", null, bag);
+        memberItemService.getMyItems(me);
+        assertThat(memberItemRepository.findByMemberIdAndName(me, "여권").orElseThrow().getCategory()).isNull();
+
+        // when — 여권(분류 채워서) · 선글라스 · 선글라스(중복)
+        MemberItemsResponse response = memberItemService.addFavorites(me, List.of(
+                favorite("여권", "서류"),
+                favorite("선글라스", "패션"),
+                favorite("선글라스", null)));
+
+        // then
+        assertThat(response.items())
+                .extracting(MemberItemResponse::name, MemberItemResponse::isFavorite, MemberItemResponse::packedCount)
+                .containsExactly(
+                        tuple("여권", true, 1L),
+                        tuple("선글라스", true, 0L));
+        // 있던 물건의 빈 분류가 채워졌고, 중복 이름은 한 행뿐이다
+        assertThat(memberItemRepository.findByMemberIdAndName(me, "여권").orElseThrow().getCategory()).isEqualTo("서류");
+        assertThat(memberItemRepository.findAllByMemberId(me)).hasSize(2);
+    }
+
+    /** 요청 DTO 는 setter 가 없어 Jackson 으로 만든다 (TestRequestFactory 와 같은 방식) */
+    private static MemberFavoriteItemRequest favorite(String name, String category) {
+        Map<String, Object> map = new HashMap<>();
+        map.put("name", name);
+        map.put("category", category);
+        return new ObjectMapper().convertValue(map, MemberFavoriteItemRequest.class);
     }
 
     /** 물품을 만들고 곧바로 「담기」 체크한다 — departureChecked=true */

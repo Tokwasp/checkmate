@@ -41,6 +41,9 @@ public interface BagItemRepository extends JpaRepository<BagItem, Long> {
 
     long countByBagIdAndDepartureChecked(Long bagId, boolean departureChecked);
 
+    /** 회원이 특정 이름의 물건을 담은 횟수 — 즐겨찾기 토글 응답이 한 건만 다시 셀 때 쓴다 */
+    long countByMemberIdAndNameAndDepartureChecked(Long memberId, String name, boolean departureChecked);
+
     /**
      * 회원이 지금까지 담은(departureChecked) 물품을 이름별로 센다 — 마이페이지 「내 물건」의 담은 횟수.
      * 여행을 가로질러 세므로 tripId 조건이 없다. 행 수를 세므로 수량(quantity)은 보지 않는다:

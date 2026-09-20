@@ -1,6 +1,8 @@
 package ssafy.checkmate.domain.member;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -13,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
@@ -104,6 +107,77 @@ class MemberItemControllerTest {
         mockMvc.perform(get("/api/v1/members/me/items"))
                 .andDo(print())
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("즐겨찾기를 켜면 200 과 그 물건 한 줄을 응답한다")
+    void setFavorite() throws Exception {
+        MemberItem item = memberItemRepository.save(MemberItem.fromPacked(1L, "여권", "서류"));
+
+        mockMvc.perform(patch("/api/v1/members/me/items/{itemId}/favorite", item.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"isFavorite\":true}"))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.itemId").value(item.getId()))
+                .andExpect(jsonPath("$.data.name").value("여권"))
+                .andExpect(jsonPath("$.data.isFavorite").value(true))
+                .andExpect(jsonPath("$.data.packedCount").value(0));
+    }
+
+    @Test
+    @DisplayName("즐겨찾기 값이 없으면 400, 없는 물건이면 404, 남의 물건이면 403 이다")
+    void setFavoriteErrors() throws Exception {
+        MemberItem mine = memberItemRepository.save(MemberItem.fromPacked(1L, "여권", "서류"));
+        MemberItem others = memberItemRepository.save(MemberItem.fromPacked(2L, "남의 여권", "서류"));
+
+        mockMvc.perform(patch("/api/v1/members/me/items/{itemId}/favorite", mine.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(patch("/api/v1/members/me/items/{itemId}/favorite", 999_999L)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"isFavorite\":true}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(patch("/api/v1/members/me/items/{itemId}/favorite", others.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"isFavorite\":true}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("여러 개를 즐겨찾기하면 200 과 갱신된 목록 전체를 응답한다")
+    void addFavorites() throws Exception {
+        mockMvc.perform(post("/api/v1/members/me/items/favorites")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[{\"name\":\"선글라스\",\"category\":\"패션\"},{\"name\":\"보조배터리\"}]}"))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(2))
+                .andExpect(jsonPath("$.data.items[*].name")
+                        .value(org.hamcrest.Matchers.containsInAnyOrder("선글라스", "보조배터리")))
+                .andExpect(jsonPath("$.data.items[*].isFavorite")
+                        .value(org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is(true))));
+    }
+
+    @Test
+    @DisplayName("즐겨찾기할 물건이 비어 있거나 이름이 없으면 400 이다")
+    void addFavoritesBadRequest() throws Exception {
+        mockMvc.perform(post("/api/v1/members/me/items/favorites")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[]}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/v1/members/me/items/favorites")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[{\"name\":\"  \"}]}"))
+                .andExpect(status().isBadRequest());
     }
 
     private String bearer(Long memberId) {
