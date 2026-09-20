@@ -14,6 +14,12 @@ public interface BagItemRepository extends JpaRepository<BagItem, Long> {
 
     List<BagItem> findAllByBagId(Long bagId);
 
+    /**
+     * 귀가 전 점검(31번) — 그 여행에서 실제로 가방에 담은 물품 전부.
+     * 체크 여부로 정렬하지 않는다. 타일을 누를 때마다 그리드가 재배치되면 옆 칸을 잘못 누르게 된다.
+     */
+    List<BagItem> findAllByTripIdAndDepartureCheckedOrderByIdAsc(Long tripId, boolean departureChecked);
+
     /** 물품 인식 등록(26번)의 체크리스트 대조 — 그 가방 안에서 이름이 같고 아직 안 담긴 항목 중 가장 먼저 만들어진 하나 */
     Optional<BagItem> findFirstByTripIdAndBagIdAndNameAndDepartureCheckedFalseOrderByIdAsc(
             Long tripId, Long bagId, String name);
