@@ -42,6 +42,52 @@ public interface BagItemRepository extends JpaRepository<BagItem, Long> {
     @Query("SELECT DISTINCT b.category FROM BagItem b WHERE b.bagId = :bagId AND b.departureChecked = true")
     List<String> findDistinctCategoriesByBagIdAndDepartureChecked(@Param("bagId") Long bagId);
 
+    /**
+     * 귀가 전 점검 확인 목록(32번) — 방금 카메라가 찾아준 것이 맨 위에 보여야 한다.
+     * updatedAt은 체크 전용 시각이 아니라 행이 바뀐 마지막 시각이라 같은 값이 나올 수 있어
+     * id 내림차순을 2차 기준으로 둔다.
+     */
+    @Query("""
+            SELECT b FROM BagItem b
+            WHERE b.tripId = :tripId
+              AND b.departureChecked = true
+              AND b.returnChecked = true
+            ORDER BY b.updatedAt DESC, b.id DESC
+            """)
+    List<BagItem> findReturnCheckedItems(@Param("tripId") Long tripId);
+
+    /** 귀가 전 점검 안 보임 목록(32번) — 누르는 동안 순서가 흔들리면 옆 줄을 잘못 누른다. */
+    @Query("""
+            SELECT b FROM BagItem b
+            WHERE b.tripId = :tripId
+              AND b.departureChecked = true
+              AND b.returnChecked = false
+            ORDER BY b.id ASC
+            """)
+    List<BagItem> findReturnUncheckedItems(@Param("tripId") Long tripId);
+
+    /**
+     * 인식한 물품 체크(33번) — 이름이 정확히 같은 미확인 물품. 가방은 가리지 않는다.
+     * 호출부가 가장 먼저 만들어진 하나만 쓴다(하나만 챙겼는데 여러 개가 체크되면 안 된다).
+     */
+    @Query("""
+            SELECT b FROM BagItem b
+            WHERE b.tripId = :tripId
+              AND b.name = :name
+              AND b.departureChecked = true
+              AND b.returnChecked = false
+            ORDER BY b.id ASC
+            """)
+    List<BagItem> findReturnUncheckedItemsByName(@Param("tripId") Long tripId, @Param("name") String name);
+
+    @Query("""
+            SELECT COUNT(b) FROM BagItem b
+            WHERE b.tripId = :tripId
+              AND b.departureChecked = true
+              AND b.returnChecked = false
+            """)
+    long countReturnUncheckedItems(@Param("tripId") Long tripId);
+
     @Query("""
             SELECT b FROM BagItem b
             WHERE b.tripId = :tripId

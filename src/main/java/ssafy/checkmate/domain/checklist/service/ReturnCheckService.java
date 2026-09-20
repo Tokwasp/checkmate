@@ -4,14 +4,20 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ssafy.checkmate.domain.checklist.dto.request.ReturnCheckScanRequest;
 import ssafy.checkmate.domain.checklist.dto.response.ReturnCheckBagResponse;
+import ssafy.checkmate.domain.checklist.dto.response.ReturnCheckFoundItemResponse;
 import ssafy.checkmate.domain.checklist.dto.response.ReturnCheckItemResponse;
+import ssafy.checkmate.domain.checklist.dto.response.ReturnCheckItemsResponse;
+import ssafy.checkmate.domain.checklist.dto.response.ReturnCheckMissingItemResponse;
 import ssafy.checkmate.domain.checklist.dto.response.ReturnCheckResponse;
+import ssafy.checkmate.domain.checklist.dto.response.ReturnCheckScanResponse;
 import ssafy.checkmate.domain.checklist.entity.Bag;
 import ssafy.checkmate.domain.checklist.entity.BagItem;
 import ssafy.checkmate.domain.checklist.repository.BagItemRepository;
@@ -22,14 +28,20 @@ import ssafy.checkmate.domain.trip.exception.TripNotFoundException;
 import ssafy.checkmate.domain.trip.repository.TripRepository;
 
 /**
- * 귀가 전 점검(31번). 돌아오기 전에 두고 온 물건이 없는지 확인하는 화면을 그린다.
+ * 귀가 전 점검(31·32·33번). 돌아오기 전에 두고 온 물건이 없는지 확인하는 화면들을 그린다.
  *
  * 짐 쌀 때 담은 물품(departureChecked)을 목록에 올리고 그 안에서 귀가 전 체크
- * (returnChecked)를 읽는다 — 애초에 안 담은 물건을 "두고 왔다"고 물을 수는 없다.
+ * (returnChecked)를 읽고 쓴다 — 애초에 안 담은 물건을 "두고 왔다"고 물을 수는 없다.
  * 두 컬럼은 서로 건드리지 않는다.
  *
- * 체크·완료 API는 다음 티켓이라 이 서비스는 아직 읽기만 한다 — 조회로 여행 단계를
- * ④귀가 전 점검으로 올리지 않는다.
+ * <ul>
+ *   <li>31번 — 가방별로 묶은 점검 목록 화면</li>
+ *   <li>32번 — 카메라 화면의 '확인 / 안 보임' 두 탭</li>
+ *   <li>33번 — 카메라가 알아본 이름으로 한 줄 체크</li>
+ * </ul>
+ *
+ * 단건 체크·해제(itemId 기준)와 점검 완료는 다음 티켓이다. 여기서는 어느 메서드도
+ * 여행 단계를 ④귀가 전 점검으로 올리지 않는다.
  */
 @Service
 @RequiredArgsConstructor
@@ -46,10 +58,8 @@ public class ReturnCheckService {
         // 가방마다 나눠 조회하지 않는다 — 어차피 물품 본문이 전부 필요해 한 번에 읽고 메모리에서 묶는다
         List<BagItem> packedItems =
                 bagItemRepository.findAllByTripIdAndDepartureCheckedOrderByIdAsc(tripId, true);
-        Map<Long, Bag> bagsById = bagRepository.findAllByTripId(tripId).stream()
-                .collect(Collectors.toMap(Bag::getId, Function.identity()));
 
-        return ReturnCheckResponse.of(trip, groupByBag(packedItems, bagsById));
+        return ReturnCheckResponse.of(trip, groupByBag(packedItems, findBagsById(tripId)));
     }
 
     /**
@@ -76,10 +86,68 @@ public class ReturnCheckService {
         return bags;
     }
 
+    /**
+     * 32번. 카메라 화면 시트의 두 탭 — 확인된 물품과 아직 안 보인 물품.
+     *
+     * 가방으로 묶지 않는다(31번과 다른 점). 대신 두 목록 모두 줄마다 가방명을 단다 —
+     * "어느 가방 것을 못 찾았나"가 이 화면의 핵심 정보다.
+     */
+    public ReturnCheckItemsResponse getItems(Long tripId, Long memberId) {
+        findTripOwnedBy(tripId, memberId, "본인의 여행만 조회할 수 있습니다.");
+
+        Map<Long, Bag> bagsById = findBagsById(tripId);
+        List<ReturnCheckFoundItemResponse> checkedItems =
+                bagItemRepository.findReturnCheckedItems(tripId).stream()
+                        .map(item -> ReturnCheckFoundItemResponse.of(item, bagsById.get(item.getBagId())))
+                        .toList();
+        List<ReturnCheckMissingItemResponse> uncheckedItems =
+                bagItemRepository.findReturnUncheckedItems(tripId).stream()
+                        .map(item -> ReturnCheckMissingItemResponse.of(item, bagsById.get(item.getBagId())))
+                        .toList();
+
+        return ReturnCheckItemsResponse.of(checkedItems, uncheckedItems);
+    }
+
+    /**
+     * 33번. 카메라가 알아본 이름으로 아직 확인 안 된 물품 하나를 찾아 체크한다.
+     *
+     * 못 찾아도 실패가 아니다 — 카메라가 2초마다 쏘는 화면이라 체크리스트에 없는 물건이
+     * 자주 비친다. 같은 이름이 여럿이면 하나만 체크한다. 하나만 챙겼는데 전부 확인된 것으로
+     * 남으면 안 되기 때문이다.
+     */
+    @Transactional
+    public ReturnCheckScanResponse scan(Long tripId, Long memberId, ReturnCheckScanRequest request) {
+        findTripOwnedBy(tripId, memberId, "본인의 여행만 수정할 수 있습니다.");
+
+        Optional<BagItem> target = bagItemRepository
+                .findReturnUncheckedItemsByName(tripId, request.getName()).stream()
+                .findFirst();
+        if (target.isEmpty()) {
+            return ReturnCheckScanResponse.notMatched((int) bagItemRepository.countReturnUncheckedItems(tripId));
+        }
+
+        BagItem item = target.get();
+        item.checkReturn();
+
+        Bag bag = bagRepository.findById(item.getBagId()).orElse(null);
+        return ReturnCheckScanResponse.matched(
+                (int) bagItemRepository.countReturnUncheckedItems(tripId),
+                ReturnCheckFoundItemResponse.of(item, bag));
+    }
+
+    private Map<Long, Bag> findBagsById(Long tripId) {
+        return bagRepository.findAllByTripId(tripId).stream()
+                .collect(Collectors.toMap(Bag::getId, Function.identity()));
+    }
+
     private Trip findTripOwnedBy(Long tripId, Long memberId) {
+        return findTripOwnedBy(tripId, memberId, "본인의 여행만 조회할 수 있습니다.");
+    }
+
+    private Trip findTripOwnedBy(Long tripId, Long memberId, String accessDeniedMessage) {
         Trip trip = tripRepository.findById(tripId).orElseThrow(TripNotFoundException::new);
         if (!trip.isOwnedBy(memberId)) {
-            throw new TripAccessDeniedException("본인의 여행만 조회할 수 있습니다.");
+            throw new TripAccessDeniedException(accessDeniedMessage);
         }
         return trip;
     }

@@ -11,6 +11,7 @@ import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemCreateRequest;
 import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemUpdateRequest;
 import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemsCreateRequest;
 import ssafy.checkmate.domain.checklist.dto.request.ChecklistItemsMoveRequest;
+import ssafy.checkmate.domain.checklist.dto.request.ReturnCheckScanRequest;
 import tools.jackson.databind.ObjectMapper;
 
 final class TestRequestFactory {
@@ -73,6 +74,12 @@ final class TestRequestFactory {
         map.put("itemIds", itemIds);
         map.put("bagId", bagId);
         return MAPPER.convertValue(map, ChecklistItemsMoveRequest.class);
+    }
+
+    static ReturnCheckScanRequest returnCheckScanRequest(String name) {
+        Map<String, Object> map = new HashMap<>();
+        map.put("name", name);
+        return MAPPER.convertValue(map, ReturnCheckScanRequest.class);
     }
 
     private static Map<String, Object> toMap(ChecklistItemCreateRequest request) {

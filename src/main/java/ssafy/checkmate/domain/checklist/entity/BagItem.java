@@ -146,6 +146,14 @@ public class BagItem extends BaseEntity {
     }
 
     /**
+     * 귀가 전 점검(33번). 카메라가 알아본 물품을 "도로 챙겼다"로 표시한다.
+     * 담김 여부(departureChecked)는 건드리지 않는다 — 두 시점은 서로 독립이다.
+     */
+    public void checkReturn() {
+        this.returnChecked = true;
+    }
+
+    /**
      * 인벤토리 물품 수정(27번). 전달된 값만 반영하고 null인 필드는 기존 값을 유지한다.
      */
     public void updatePacking(Integer quantity, Boolean checked) {
