@@ -239,6 +239,8 @@ class TripControllerTest {
                 .andExpect(jsonPath("$.data.currentStepName").value("체크리스트 생성"))
                 .andExpect(jsonPath("$.data.totalItemCount").value(2))
                 .andExpect(jsonPath("$.data.recognizedItemCount").value(0))
+                // 아무것도 안 담았으니 두고 온 물건도 0 — 필드가 응답에 실리는지까지 본다
+                .andExpect(jsonPath("$.data.leftBehindCount").value(0))
                 .andExpect(jsonPath("$.data.bags.length()").value(2))
                 .andExpect(jsonPath("$.data.bags[*].bagName").value(org.hamcrest.Matchers.containsInAnyOrder("NONE", "캐리어")))
                 .andExpect(jsonPath("$.data.bags[?(@.bagName == '캐리어')].items[0].name")

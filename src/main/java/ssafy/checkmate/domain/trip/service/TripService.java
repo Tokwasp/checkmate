@@ -138,8 +138,12 @@ public class TripService {
 
         int totalItemCount = items.size();
         int recognizedItemCount = (int) items.stream().filter(BagItem::isDepartureChecked).count();
+        // 귀가 전 점검(BagItemRepository.countReturnUncheckedItems)과 같은 기준 — 담았는데 아직 확인 안 된 것
+        int leftBehindCount = (int) items.stream()
+                .filter(item -> item.isDepartureChecked() && !item.isReturnChecked())
+                .count();
 
-        return TripDetailResponse.of(trip, today, totalItemCount, recognizedItemCount, bags);
+        return TripDetailResponse.of(trip, today, totalItemCount, recognizedItemCount, leftBehindCount, bags);
     }
 
     @Transactional

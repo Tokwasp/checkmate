@@ -340,7 +340,7 @@ class TripServiceTest {
     }
 
     @Test
-    @DisplayName("여행 상세를 조회하면 타입/기간/출국 항공사와 가방별 물품 목록을 반환한다")
+    @DisplayName("여행 상세를 조회하면 타입/기간/출입국 항공사·두고 온 물건 수와 가방별 물품 목록을 반환한다")
     void getTripDetail() {
         // given
         LocalDate today = LocalDate.now();
@@ -364,6 +364,11 @@ class TripServiceTest {
                 BagItem.create(trip.getId(), 1L, "여권", "서류", 1, defaultBag.getId()));
         passport.update(null, null, null, true, null);
         bagItemRepository.save(BagItem.create(trip.getId(), 1L, "우산", "생활용품", 2, carrier.getId()));
+        // 담았고(departureChecked) 귀가 전 점검까지 끝난 물품 — 두고 온 물건에서 빠져야 한다
+        BagItem charger = bagItemRepository.save(
+                BagItem.create(trip.getId(), 1L, "충전기", "전자기기", 1, carrier.getId()));
+        charger.update(null, null, null, true, null);
+        charger.checkReturn();
 
         // when
         TripDetailResponse response = tripService.getTripDetail(trip.getId(), 1L, today);
@@ -375,20 +380,23 @@ class TripServiceTest {
         assertThat(response.getStartDate()).isEqualTo(today.plusDays(1));
         assertThat(response.getEndDate()).isEqualTo(today.plusDays(3));
         assertThat(response.getDepartureAirline()).isEqualTo("대한항공");
+        assertThat(response.getArrivalAirline()).isEqualTo("피치항공");
         assertThat(response.getCurrentStep()).isEqualTo(2);
         assertThat(response.getTotalStep()).isEqualTo(4);
         assertThat(response.getCurrentStepName()).isEqualTo("체크리스트 생성");
-        assertThat(response.getTotalItemCount()).isEqualTo(2);
-        assertThat(response.getRecognizedItemCount()).isEqualTo(1);
+        assertThat(response.getTotalItemCount()).isEqualTo(3);
+        assertThat(response.getRecognizedItemCount()).isEqualTo(2);
+        // 담은 것 2개(여권·충전기) 중 점검 끝난 충전기를 빼면 1 — 우산은 담지도 않았으니 애초에 대상이 아니다
+        assertThat(response.getLeftBehindCount()).isEqualTo(1);
         assertThat(response.getBags()).hasSize(3)
                 .extracting("bagName")
                 .containsExactlyInAnyOrder("NONE", "캐리어", "백팩");
 
         TripBagResponse carrierBag = response.getBags().stream()
                 .filter(bag -> bag.getBagName().equals("캐리어")).findFirst().orElseThrow();
-        assertThat(carrierBag.getItems()).hasSize(1)
+        assertThat(carrierBag.getItems()).hasSize(2)
                 .extracting("name", "quantity")
-                .containsExactly(tuple("우산", 2));
+                .containsExactlyInAnyOrder(tuple("우산", 2), tuple("충전기", 1));
 
         TripBagResponse backpackBag = response.getBags().stream()
                 .filter(bag -> bag.getBagName().equals("백팩")).findFirst().orElseThrow();
