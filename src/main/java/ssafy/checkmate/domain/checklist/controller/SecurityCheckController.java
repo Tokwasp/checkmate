@@ -1,5 +1,6 @@
 package ssafy.checkmate.domain.checklist.controller;
 
+import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -24,12 +25,14 @@ public class SecurityCheckController {
             @LoginMember MemberPrincipal principal,
             @PathVariable Long tripId) {
         log.info("[security-check] 검사 요청 memberId={} tripId={}", principal.memberId(), tripId);
+        long startedAt = System.nanoTime();
 
         SecurityCheckResponse response = securityCheckService.check(tripId, principal.memberId());
 
-        log.info("[security-check] 검사 완료 memberId={} tripId={} 금지={} 주의={} 통과={}",
+        log.info("[security-check] 검사 완료 memberId={} tripId={} 금지={} 주의={} 통과={} 소요={}ms",
                 principal.memberId(), tripId, response.getViolationCount(),
-                response.getWarningCount(), response.getPassCount());
+                response.getWarningCount(), response.getPassCount(),
+                TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt));
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 }

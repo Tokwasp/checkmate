@@ -6,6 +6,8 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -78,6 +80,8 @@ public class SecurityCheckService {
         List<BagItem> items = findItemsToCheck(tripId);
         Map<Long, Bag> bags = findBagsOf(tripId);
         Map<ItemGroup, List<BagItem>> groups = groupForQuery(items, bags);
+        log.info("[security-check] 검사 대상 tripId={} country={} 물품={}개 → 질의 묶음={}건",
+                tripId, jurisdiction, items.size(), groups.size());
 
         consumeQuota(memberId);
         Map<Long, SecurityVerdict> verdicts = askRegulation(jurisdiction, groups);
@@ -146,7 +150,16 @@ public class SecurityCheckService {
 
         Map<Long, SecurityVerdict> byItemId = new HashMap<>();
         verdicts.forEach(verdict -> byItemId.put(verdict.getItemId(), verdict));
+        warnUnknownItemIds(targets, byItemId);
         return byItemId;
+    }
+
+    /** 요청에 없던 itemId 판정은 조용히 버려지므로, 모델이 ID를 잘못 돌려줬는지 알 수 있게 남긴다. */
+    private void warnUnknownItemIds(List<SecurityCheckTarget> targets, Map<Long, SecurityVerdict> verdicts) {
+        Set<Long> sentIds = targets.stream().map(SecurityCheckTarget::getItemId).collect(Collectors.toSet());
+        verdicts.keySet().stream()
+                .filter(itemId -> !sentIds.contains(itemId))
+                .forEach(itemId -> log.warn("[security-check] 요청에 없던 itemId={} 판정이 왔다 — 무시한다", itemId));
     }
 
     /**
@@ -195,10 +208,11 @@ public class SecurityCheckService {
     private List<SecurityCheckItemResponse> applyVerdicts(Map<ItemGroup, List<BagItem>> groups,
             Map<Long, Bag> bags, Map<Long, SecurityVerdict> verdicts) {
         List<SecurityCheckItemResponse> responses = new ArrayList<>();
-        groups.values().forEach(group -> {
+        groups.forEach((key, group) -> {
             SecurityVerdict verdict = verdicts.get(representativeIdOf(group));
             VerdictLevel level = verdict == null ? VerdictLevel.NONE : verdict.getLevel();
             String guide = verdict == null ? null : verdict.getGuide();
+            logVerdict(key, verdict, level);
             group.forEach(item -> {
                 saveRiskLevel(item.getId(), level);
                 responses.add(SecurityCheckItemResponse.of(item.getId(), item.getImageUrl(), item.getName(),
@@ -206,6 +220,22 @@ public class SecurityCheckService {
             });
         });
         return responses;
+    }
+
+    /**
+     * 통과는 개수만 완료 로그에 남기고, 금지·주의와 판정이 오지 않은 묶음만 물품별로 남긴다.
+     * "왜 이 물품이 걸렸나/안 걸렸나"를 나중에 따라갈 때 필요한 건 그 둘이다.
+     */
+    private void logVerdict(ItemGroup key, SecurityVerdict verdict, VerdictLevel level) {
+        if (verdict == null) {
+            log.warn("[security-check] 판정이 오지 않은 묶음은 통과로 둔다 물품={} 가방={} 구분={}",
+                    key.name(), key.bagName(), key.carriageType());
+            return;
+        }
+        if (level != VerdictLevel.NONE) {
+            log.info("[security-check] 판정 물품={} 가방={} 구분={} → {}",
+                    key.name(), key.bagName(), key.carriageType(), level.getLabel());
+        }
     }
 
     /** 위험도만 남기고 안내 문구는 저장하지 않는다 — 마스터에 물품별 문구를 담을 자리가 없다. */
@@ -242,7 +272,6 @@ public class SecurityCheckService {
         int violationCount = countOf(sorted, VerdictLevel.VIOLATION);
         int warningCount = countOf(sorted, VerdictLevel.WARNING);
         int passCount = countOf(sorted, VerdictLevel.NONE);
-        log.info("[security-check] 검사 완료 금지={} 주의={} 통과={}", violationCount, warningCount, passCount);
 
         return SecurityCheckResponse.of(violationCount, warningCount, passCount, sorted);
     }

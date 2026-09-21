@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +29,7 @@ import software.amazon.awssdk.services.bedrockruntime.model.ConverseResponse;
 import software.amazon.awssdk.services.bedrockruntime.model.InferenceConfiguration;
 import software.amazon.awssdk.services.bedrockruntime.model.Message;
 import software.amazon.awssdk.services.bedrockruntime.model.SpecificToolChoice;
+import software.amazon.awssdk.services.bedrockruntime.model.StopReason;
 import software.amazon.awssdk.services.bedrockruntime.model.SystemContentBlock;
 import software.amazon.awssdk.services.bedrockruntime.model.Tool;
 import software.amazon.awssdk.services.bedrockruntime.model.ToolChoice;
@@ -136,11 +138,12 @@ public class BedrockAviationRegulationClient implements AviationRegulationClient
                 .distinct()
                 .toList();
 
+        long startedAt = System.nanoTime();
         Set<String> chunks = new LinkedHashSet<>();
         queries.forEach(query -> chunks.addAll(retrieveFor(query, filter)));
 
-        log.info("[security-check] 규정 검색 완료 jurisdiction={} 물품={}종 청크={}건(중복 제거 후)",
-                jurisdiction, queries.size(), chunks.size());
+        log.info("[security-check] 규정 검색 완료 jurisdiction={} 물품={}종 청크={}건(중복 제거 후) 소요={}ms",
+                jurisdiction, queries.size(), chunks.size(), elapsedMillisSince(startedAt));
 
         return String.join("\n\n---\n\n", chunks);
     }
@@ -159,9 +162,14 @@ public class BedrockAviationRegulationClient implements AviationRegulationClient
                         .build())
                 .build());
 
-        return response.retrievalResults().stream()
+        List<String> texts = response.retrievalResults().stream()
                 .map(result -> result.content().text())
                 .toList();
+        if (texts.isEmpty()) {
+            log.warn("[security-check] 규정 검색 결과가 없다 — 이 물품은 근거 없이 통과로 판정될 수 있다 검색어={}",
+                    searchTerms);
+        }
+        return texts;
     }
 
     /** scope=avsec 이면서 해당 국가 또는 공통(GLOBAL) 문서만 본다. */
@@ -181,6 +189,7 @@ public class BedrockAviationRegulationClient implements AviationRegulationClient
 
     /** 도구 사용으로 출력 스키마를 강제해 판정을 받는다. */
     private List<SecurityVerdict> generateVerdicts(String regulations, List<SecurityCheckTarget> targets) {
+        long startedAt = System.nanoTime();
         ConverseResponse response = bedrockRuntimeClient.converse(ConverseRequest.builder()
                 .modelId(properties.modelId())
                 .system(SystemContentBlock.fromText(SYSTEM_PROMPT))
@@ -195,11 +204,19 @@ public class BedrockAviationRegulationClient implements AviationRegulationClient
                         .build())
                 .build());
 
-        log.info("[security-check] 판정 생성 완료 model={} 묶음={}건 입력토큰={} 출력토큰={}",
+        log.info("[security-check] 판정 생성 완료 model={} 묶음={}건 입력토큰={} 출력토큰={} stopReason={} 소요={}ms",
                 properties.modelId(), targets.size(),
-                response.usage().inputTokens(), response.usage().outputTokens());
+                response.usage().inputTokens(), response.usage().outputTokens(),
+                response.stopReasonAsString(), elapsedMillisSince(startedAt));
+        if (response.stopReason() == StopReason.MAX_TOKENS) {
+            log.warn("[security-check] 응답이 토큰 상한에서 잘렸다 — 뒤쪽 묶음은 판정이 빠질 수 있다 묶음={}건", targets.size());
+        }
 
         return parseVerdicts(response);
+    }
+
+    private static long elapsedMillisSince(long startedAtNanos) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos);
     }
 
     String userPrompt(String regulations, List<SecurityCheckTarget> targets) {
