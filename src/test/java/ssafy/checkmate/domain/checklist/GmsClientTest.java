@@ -30,7 +30,7 @@ class GmsClientTest {
                 .andRespond(withSuccess("""
                         {"choices":[{"message":{"role":"assistant","content":"[]"}}]}
                         """, MediaType.APPLICATION_JSON));
-        GmsClient client = new GmsClient(builder.build(), new GmsProperties(BASE_URL, "key", "test-model"));
+        GmsClient client = new GmsClient(builder.build(), new GmsProperties(BASE_URL, "key", "test-model", BASE_URL, "test-vision-model"));
 
         // when
         String content = client.chat("system", "user");
@@ -47,7 +47,7 @@ class GmsClientTest {
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         server.expect(requestTo(BASE_URL))
                 .andRespond(withSuccess("{\"choices\":[]}", MediaType.APPLICATION_JSON));
-        GmsClient client = new GmsClient(builder.build(), new GmsProperties(BASE_URL, "key", "test-model"));
+        GmsClient client = new GmsClient(builder.build(), new GmsProperties(BASE_URL, "key", "test-model", BASE_URL, "test-vision-model"));
 
         // when // then
         assertThatThrownBy(() -> client.chat("system", "user"))

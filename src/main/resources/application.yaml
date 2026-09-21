@@ -41,6 +41,11 @@ gms:
   base-url: ${GMS_BASE_URL}
   api-key: ${GMS_KEY}
   model: ${GMS_MODEL:gpt-4o-mini}
+  # 촬영 물품 반입 판정(35번) 전용. GMS는 벤더별 경로라 Claude는 OpenAI 경로(base-url)가 아니라 Anthropic 경로로
+  # 호출해야 한다(OpenAI 경로에 Claude 모델을 보내면 model_not_found 404). 경로 전체(.../v1/messages)를 적는다.
+  vision-base-url: ${GMS_VISION_BASE_URL:https://gms.ssafy.io/gmsapi/api.anthropic.com/v1/messages}
+  # model과 분리해 15번이 함께 바뀌지 않게 한다.
+  vision-model: ${GMS_VISION_MODEL:}
 
 # 물품 인식 등록(26번)의 인벤토리 사진 저장소. bucket이 비어 있으면 S3 대신 local-dir에 저장한다.
 storage:
