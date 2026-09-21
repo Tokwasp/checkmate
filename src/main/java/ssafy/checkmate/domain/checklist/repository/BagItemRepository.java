@@ -62,6 +62,36 @@ public interface BagItemRepository extends JpaRepository<BagItem, Long> {
             """)
     List<PackedNameCount> countPackedByMember(@Param("memberId") Long memberId);
 
+    /**
+     * 자주 담은 물건(10-2번) — 담은(departureChecked) 물품 이름을 담은 횟수 내림차순으로, 횟수가 같으면 이름순으로.
+     * countPackedByMember 와 같은 기준으로 센다(여행을 가로지르고 행 수를 세며 수량은 보지 않는다).
+     * 몇 개까지 가져올지는 Pageable 로 정한다.
+     */
+    @Query("""
+            SELECT b.name
+            FROM BagItem b
+            WHERE b.memberId = :memberId
+              AND b.departureChecked = true
+            GROUP BY b.name
+            ORDER BY COUNT(b) DESC, b.name ASC
+            """)
+    List<String> findMostPackedNames(@Param("memberId") Long memberId, Pageable pageable);
+
+    /**
+     * 자주 담은 물건(10-2번)의 사진 — 이름마다 사진이 있는 물품 중 가장 최근(id 가 가장 큰) 하나.
+     * 가장 최근 물품에 사진이 없으면 건너뛰고 이전 것을 쓴다. 사진이 하나도 없는 이름은 결과에 없다.
+     */
+    @Query("""
+            SELECT b FROM BagItem b
+            WHERE b.id IN (
+                SELECT MAX(l.id) FROM BagItem l
+                WHERE l.memberId = :memberId
+                  AND l.name IN :names
+                  AND l.imageUrl IS NOT NULL
+                GROUP BY l.name)
+            """)
+    List<BagItem> findLatestImagedItemsByNames(@Param("memberId") Long memberId, @Param("names") List<String> names);
+
     void deleteAllByTripId(Long tripId);
 
     @Query("SELECT DISTINCT b.category FROM BagItem b WHERE b.tripId = :tripId AND b.departureChecked = true")

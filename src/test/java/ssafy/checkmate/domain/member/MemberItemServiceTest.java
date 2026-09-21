@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,6 +27,9 @@ import ssafy.checkmate.domain.checklist.entity.BagItem;
 import ssafy.checkmate.domain.checklist.repository.BagItemRepository;
 import ssafy.checkmate.domain.checklist.repository.BagRepository;
 import ssafy.checkmate.domain.member.dto.request.MemberFavoriteItemRequest;
+import ssafy.checkmate.domain.member.dto.response.FavoriteItemsResponse;
+import ssafy.checkmate.domain.member.dto.response.FrequentItemsResponse;
+import ssafy.checkmate.domain.member.dto.response.MemberItemBriefResponse;
 import ssafy.checkmate.domain.member.dto.response.MemberItemResponse;
 import ssafy.checkmate.domain.member.dto.response.MemberItemsResponse;
 import ssafy.checkmate.domain.member.entity.MemberItem;
@@ -242,6 +246,180 @@ class MemberItemServiceTest {
         // 있던 물건의 빈 분류가 채워졌고, 중복 이름은 한 행뿐이다
         assertThat(memberItemRepository.findByMemberIdAndName(me, "여권").orElseThrow().getCategory()).isEqualTo("서류");
         assertThat(memberItemRepository.findAllByMemberId(me)).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("즐겨찾기 물건을 커서 없이 조회하면 id 가 큰 것부터 9개를 주고, nextCursor 로 이어 받으면 나머지를 준다")
+    void getFavoriteItems() {
+        // given — 즐겨찾기 11개, 그 사이사이에 섞이면 안 되는 물건(즐겨찾기 아님·남의 것)
+        Long me = 1L;
+        List<MemberItem> favorites = new ArrayList<>();
+        for (int i = 1; i <= 11; i++) {
+            favorites.add(memberItemRepository.save(MemberItem.asFavorite(me, "물건" + i, null)));
+        }
+        memberItemRepository.save(MemberItem.fromPacked(me, "즐겨찾기 아님", null));
+        memberItemRepository.save(MemberItem.asFavorite(2L, "남의 즐겨찾기", null));
+
+        // when
+        FavoriteItemsResponse first = memberItemService.getFavoriteItems(me, null);
+        FavoriteItemsResponse second = memberItemService.getFavoriteItems(me, first.nextCursor());
+
+        // then — 첫 페이지는 가장 최근에 만들어진 9개, 커서는 그 마지막(물건3)의 id
+        assertThat(first.items()).extracting(MemberItemBriefResponse::name)
+                .containsExactly("물건11", "물건10", "물건9", "물건8", "물건7", "물건6", "물건5", "물건4", "물건3");
+        assertThat(first.hasNext()).isTrue();
+        assertThat(first.nextCursor()).isEqualTo(favorites.get(2).getId());
+        // 둘째 페이지는 남은 2개이고 더 없다
+        assertThat(second.items()).extracting(MemberItemBriefResponse::name).containsExactly("물건2", "물건1");
+        assertThat(second.hasNext()).isFalse();
+        assertThat(second.nextCursor()).isNull();
+    }
+
+    @Test
+    @DisplayName("즐겨찾기가 정확히 9개면 한 페이지로 끝나고 다음 페이지는 없다")
+    void getFavoriteItemsWhenExactlyOnePage() {
+        Long me = 1L;
+        for (int i = 1; i <= 9; i++) {
+            memberItemRepository.save(MemberItem.asFavorite(me, "물건" + i, null));
+        }
+
+        FavoriteItemsResponse response = memberItemService.getFavoriteItems(me, null);
+
+        assertThat(response.items()).hasSize(9);
+        assertThat(response.hasNext()).isFalse();
+        assertThat(response.nextCursor()).isNull();
+    }
+
+    @Test
+    @DisplayName("즐겨찾기 이미지는 마스터에 저장된 사진 그대로이고, 없으면 인벤토리에 누끼가 있어도 null 이다")
+    void getFavoriteItemsUsesMasterImageOnly() {
+        // given — 여권은 마스터에 사진이 있고, 선글라스는 마스터엔 없지만 인벤토리엔 누끼가 있다
+        Long me = 1L;
+        Trip trip = createTrip(me, "도쿄");
+        Long bag = bagRepository.save(Bag.createDefault(trip.getId(), me)).getId();
+        bagItemRepository.save(BagItem.createRecognized(trip.getId(), me, "여권", "서류", bag, "https://s3/1/passport-inventory.png"));
+        bagItemRepository.save(BagItem.createRecognized(trip.getId(), me, "선글라스", "패션", bag, "https://s3/1/sunglasses-inventory.png"));
+        MemberItem passport = memberItemRepository.save(MemberItem.asFavorite(me, "여권", "서류"));
+        passport.updateImage("https://s3/1/items/passport-master.png");
+        memberItemRepository.save(MemberItem.asFavorite(me, "선글라스", "패션"));
+
+        // when
+        FavoriteItemsResponse response = memberItemService.getFavoriteItems(me, null);
+
+        // then — 최근 것부터: 선글라스(마스터 사진 없음 → null), 여권(마스터 사진)
+        assertThat(response.items())
+                .extracting(MemberItemBriefResponse::name, MemberItemBriefResponse::imageUrl)
+                .containsExactly(
+                        tuple("선글라스", null),
+                        tuple("여권", "https://s3/1/items/passport-master.png"));
+    }
+
+    @Test
+    @DisplayName("즐겨찾기가 하나도 없으면 빈 목록이고 다음 페이지도 없다")
+    void getFavoriteItemsEmpty() {
+        FavoriteItemsResponse response = memberItemService.getFavoriteItems(99L, null);
+
+        assertThat(response.items()).isEmpty();
+        assertThat(response.hasNext()).isFalse();
+        assertThat(response.nextCursor()).isNull();
+    }
+
+    @Test
+    @DisplayName("자주 담은 물건은 여행을 가로질러 담은 횟수 순으로 세고, 수량은 보지 않으며, 안 담은 것·남의 것은 뺀다")
+    void getFrequentItems() {
+        // given
+        Long me = 1L;
+        Long other = 2L;
+        Trip tokyo = createTrip(me, "도쿄");
+        Trip osaka = createTrip(me, "오사카");
+        Trip danang = createTrip(me, "다낭");
+        Trip otherTrip = createTrip(other, "방콕");
+        Long tokyoBag = bagRepository.save(Bag.createDefault(tokyo.getId(), me)).getId();
+        Long osakaBag = bagRepository.save(Bag.createDefault(osaka.getId(), me)).getId();
+        Long danangBag = bagRepository.save(Bag.createDefault(danang.getId(), me)).getId();
+        Long otherBag = bagRepository.save(Bag.createDefault(otherTrip.getId(), other)).getId();
+
+        // 여권 — 세 여행에 담음 → 3
+        pack(tokyo.getId(), me, "여권", "서류", tokyoBag);
+        pack(osaka.getId(), me, "여권", "서류", osakaBag);
+        pack(danang.getId(), me, "여권", "서류", danangBag);
+        // 충전기 — 두 여행에 담음 → 2
+        pack(tokyo.getId(), me, "충전기", "전자기기", tokyoBag);
+        pack(osaka.getId(), me, "충전기", "전자기기", osakaBag);
+        // 양말 — 한 번에 다섯 켤레를 담았어도 → 1 (수량은 세지 않는다)
+        BagItem socks = bagItemRepository.save(BagItem.create(tokyo.getId(), me, "양말", "의류", 5, tokyoBag));
+        socks.update(null, null, null, true, null);
+        // 우산 — 체크리스트에만 있고 담지는 않음 → 나오면 안 된다
+        bagItemRepository.save(BagItem.create(tokyo.getId(), me, "우산", "생활용품", 1, tokyoBag));
+        // 남의 물건 — 남이 많이 담았어도 내 목록에 섞이면 안 된다
+        pack(otherTrip.getId(), other, "선글라스", "패션", otherBag);
+        pack(otherTrip.getId(), other, "선글라스", "패션", otherBag);
+        pack(otherTrip.getId(), other, "선글라스", "패션", otherBag);
+        pack(otherTrip.getId(), other, "선글라스", "패션", otherBag);
+
+        // when
+        FrequentItemsResponse response = memberItemService.getFrequentItems(me);
+
+        // then
+        assertThat(response.items()).extracting(MemberItemBriefResponse::name)
+                .containsExactly("여권", "충전기", "양말");
+    }
+
+    @Test
+    @DisplayName("자주 담은 물건은 담은 횟수 상위 9개만 주고, 횟수가 같으면 이름순으로 자른다")
+    void getFrequentItemsLimitsToNine() {
+        // given — 여권 3번, 나머지 10개 이름은 한 번씩
+        Long me = 1L;
+        Trip trip = createTrip(me, "도쿄");
+        Long bag = bagRepository.save(Bag.createDefault(trip.getId(), me)).getId();
+        for (int i = 0; i < 3; i++) {
+            pack(trip.getId(), me, "여권", "서류", bag);
+        }
+        for (int i = 10; i >= 1; i--) {
+            pack(trip.getId(), me, String.format("물품%02d", i), "기타", bag);
+        }
+
+        // when
+        FrequentItemsResponse response = memberItemService.getFrequentItems(me);
+
+        // then — 여권이 맨 앞, 나머지 8자리는 이름순으로 채워지고 물품09·물품10 은 잘린다
+        assertThat(response.items()).extracting(MemberItemBriefResponse::name)
+                .containsExactly("여권", "물품01", "물품02", "물품03", "물품04", "물품05", "물품06", "물품07", "물품08");
+    }
+
+    @Test
+    @DisplayName("자주 담은 물건의 사진은 사진이 있는 가장 최근 물품의 것이고, 최근 것에 사진이 없으면 이전 것을 쓰며, 모두 없으면 null 이다")
+    void getFrequentItemsPicksLatestImage() {
+        // given
+        Long me = 1L;
+        Trip trip = createTrip(me, "도쿄");
+        Long bag = bagRepository.save(Bag.createDefault(trip.getId(), me)).getId();
+        // 여권 — 사진 있음(오래됨) → 사진 있음(최근) → 사진 없음(가장 최근). 가장 최근 것은 건너뛰고 그 앞의 사진을 쓴다
+        bagItemRepository.save(BagItem.createRecognized(trip.getId(), me, "여권", "서류", bag, "https://s3/1/passport-old.png"));
+        bagItemRepository.save(BagItem.createRecognized(trip.getId(), me, "여권", "서류", bag, "https://s3/1/passport-new.png"));
+        pack(trip.getId(), me, "여권", "서류", bag);
+        // 충전기 — 사진이 하나도 없다. 사진이 없어도 순위에서 빠지지 않는다
+        pack(trip.getId(), me, "충전기", "전자기기", bag);
+        pack(trip.getId(), me, "충전기", "전자기기", bag);
+        // 우산 — 사진 있음
+        bagItemRepository.save(BagItem.createRecognized(trip.getId(), me, "우산", "생활용품", bag, "https://s3/1/umbrella.png"));
+
+        // when
+        FrequentItemsResponse response = memberItemService.getFrequentItems(me);
+
+        // then
+        assertThat(response.items())
+                .extracting(MemberItemBriefResponse::name, MemberItemBriefResponse::imageUrl)
+                .containsExactly(
+                        tuple("여권", "https://s3/1/passport-new.png"),
+                        tuple("충전기", null),
+                        tuple("우산", "https://s3/1/umbrella.png"));
+    }
+
+    @Test
+    @DisplayName("담은 물건이 하나도 없으면 자주 담은 물건은 빈 목록이다")
+    void getFrequentItemsEmpty() {
+        assertThat(memberItemService.getFrequentItems(99L).items()).isEmpty();
     }
 
     /** 요청 DTO 는 setter 가 없어 Jackson 으로 만든다 (TestRequestFactory 와 같은 방식) */

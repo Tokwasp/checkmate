@@ -9,12 +9,15 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.http.MediaType;
 import ssafy.checkmate.domain.member.dto.request.MemberFavoritesRequest;
 import ssafy.checkmate.domain.member.dto.request.MemberItemFavoriteRequest;
+import ssafy.checkmate.domain.member.dto.response.FavoriteItemsResponse;
+import ssafy.checkmate.domain.member.dto.response.FrequentItemsResponse;
 import ssafy.checkmate.domain.member.dto.response.MemberItemResponse;
 import ssafy.checkmate.domain.member.dto.response.MemberItemsResponse;
 import ssafy.checkmate.domain.member.service.MemberItemService;
@@ -33,6 +36,21 @@ public class MemberItemController {
     @GetMapping("/api/v1/members/me/items")
     public ResponseEntity<ApiResponse<MemberItemsResponse>> getMyItems(@LoginMember MemberPrincipal principal) {
         return ResponseEntity.ok(ApiResponse.success(memberItemService.getMyItems(principal.memberId())));
+    }
+
+    /** 즐겨찾기 물건(이미지·이름) — cursor 기반 무한스크롤, 9개씩. cursor 를 생략하면 id 가 가장 큰 것부터. */
+    @GetMapping("/api/v1/members/me/items/favorites")
+    public ResponseEntity<ApiResponse<FavoriteItemsResponse>> getFavoriteItems(
+            @LoginMember MemberPrincipal principal,
+            @RequestParam(required = false) Long cursor) {
+        return ResponseEntity.ok(ApiResponse.success(memberItemService.getFavoriteItems(principal.memberId(), cursor)));
+    }
+
+    /** 자주 담은 물건(이미지·이름) — 여행을 가로질러 담은 횟수 상위 9개. 페이징 없음. */
+    @GetMapping("/api/v1/members/me/items/frequent")
+    public ResponseEntity<ApiResponse<FrequentItemsResponse>> getFrequentItems(
+            @LoginMember MemberPrincipal principal) {
+        return ResponseEntity.ok(ApiResponse.success(memberItemService.getFrequentItems(principal.memberId())));
     }
 
     /** 즐겨찾기 켜기/끄기 — 본문 { "isFavorite": true }. */

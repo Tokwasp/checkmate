@@ -5,7 +5,9 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -13,6 +15,9 @@ import ssafy.checkmate.domain.checklist.entity.BagItem;
 import ssafy.checkmate.domain.checklist.repository.BagItemRepository;
 import ssafy.checkmate.domain.checklist.repository.PackedNameCount;
 import ssafy.checkmate.domain.member.dto.request.MemberFavoriteItemRequest;
+import ssafy.checkmate.domain.member.dto.response.FavoriteItemsResponse;
+import ssafy.checkmate.domain.member.dto.response.FrequentItemsResponse;
+import ssafy.checkmate.domain.member.dto.response.MemberItemBriefResponse;
 import ssafy.checkmate.domain.member.dto.response.MemberItemResponse;
 import ssafy.checkmate.domain.member.dto.response.MemberItemsResponse;
 import ssafy.checkmate.domain.member.entity.MemberItem;
@@ -29,6 +34,9 @@ import ssafy.checkmate.global.storage.ImageStorage;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class MemberItemService {
+
+    private static final int FAVORITE_PAGE_SIZE = 9;
+    private static final int FREQUENT_ITEM_COUNT = 9;
 
     private final MemberItemRepository memberItemRepository;
     private final BagItemRepository bagItemRepository;
@@ -86,6 +94,36 @@ public class MemberItemService {
                         .thenComparing(MemberItemResponse::name))
                 .toList();
         return MemberItemsResponse.of(items);
+    }
+
+    /**
+     * 즐겨찾기 물건(10-1번). 즐겨찾기한 내 물건을 id 내림차순으로 9개씩 커서 페이징한다.
+     * 다음 페이지가 있는지는 한 개를 더 읽어 확인하고, 이미지는 마스터에 저장된 값을 그대로 쓴다.
+     */
+    public FavoriteItemsResponse getFavoriteItems(Long memberId, Long cursor) {
+        List<MemberItem> rows = memberItemRepository.findFavoriteItems(
+                memberId, cursor, PageRequest.of(0, FAVORITE_PAGE_SIZE + 1));
+
+        boolean hasNext = rows.size() > FAVORITE_PAGE_SIZE;
+        List<MemberItem> page = hasNext ? rows.subList(0, FAVORITE_PAGE_SIZE) : rows;
+        return FavoriteItemsResponse.of(page, hasNext);
+    }
+
+    /**
+     * 자주 담은 물건(10-2번). 담은 횟수 상위 9개를 이름과 사진으로 내려준다.
+     * 순위는 사진 유무와 상관없이 담은 횟수로 먼저 정하고, 그다음에 이름마다 사진을 채운다.
+     */
+    public FrequentItemsResponse getFrequentItems(Long memberId) {
+        List<String> names = bagItemRepository.findMostPackedNames(memberId, PageRequest.of(0, FREQUENT_ITEM_COUNT));
+        if (names.isEmpty()) {
+            return FrequentItemsResponse.of(List.of());
+        }
+
+        Map<String, String> imageByName = latestImageByName(memberId, names);
+        List<MemberItemBriefResponse> items = names.stream()
+                .map(name -> MemberItemBriefResponse.of(name, imageByName.get(name)))
+                .toList();
+        return FrequentItemsResponse.of(items);
     }
 
     /** 즐겨찾기 켜기/끄기. 본인 물건이 아니면 403, 없으면 404. 응답은 목록의 한 줄과 같은 모양. */
@@ -153,6 +191,12 @@ public class MemberItemService {
             byName.putIfAbsent(item.getName(), item.getImageUrl());
         }
         return byName;
+    }
+
+    /** 지정한 이름들의 최근 인벤토리 누끼 — 사진이 하나도 없는 이름은 맵에 없다 */
+    private Map<String, String> latestImageByName(Long memberId, List<String> names) {
+        return bagItemRepository.findLatestImagedItemsByNames(memberId, names).stream()
+                .collect(Collectors.toMap(BagItem::getName, BagItem::getImageUrl));
     }
 
     /** 마스터에 사진이 있으면 그것, 없으면 인벤토리 누끼, 그것도 없으면 null */

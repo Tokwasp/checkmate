@@ -212,6 +212,104 @@ class MemberItemControllerTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test
+    @DisplayName("즐겨찾기 물건을 조회하면 이미지·이름만 담긴 items 와 hasNext, nextCursor 를 응답한다")
+    void getFavoriteItems() throws Exception {
+        // given — 사진 있는 즐겨찾기, 사진 없는 즐겨찾기, 즐겨찾기 아닌 물건, 남의 즐겨찾기
+        MemberItem passport = memberItemRepository.save(MemberItem.asFavorite(1L, "여권", "서류"));
+        passport.updateImage("https://s3/1/items/passport.png");
+        memberItemRepository.save(MemberItem.asFavorite(1L, "선글라스", null));
+        memberItemRepository.save(MemberItem.fromPacked(1L, "충전기", "전자기기"));
+        memberItemRepository.save(MemberItem.asFavorite(2L, "남의 물건", null));
+
+        // when // then — 최근에 만들어진 것부터
+        mockMvc.perform(get("/api/v1/members/me/items/favorites")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(2))
+                .andExpect(jsonPath("$.data.items[0].name").value("선글라스"))
+                .andExpect(jsonPath("$.data.items[0].imageUrl").value((Object) null))
+                .andExpect(jsonPath("$.data.items[0].itemId").doesNotExist())
+                .andExpect(jsonPath("$.data.items[1].name").value("여권"))
+                .andExpect(jsonPath("$.data.items[1].imageUrl").value("https://s3/1/items/passport.png"))
+                .andExpect(jsonPath("$.data.hasNext").value(false))
+                .andExpect(jsonPath("$.data.nextCursor").value((Object) null));
+    }
+
+    @Test
+    @DisplayName("즐겨찾기 물건을 cursor 와 함께 조회하면 그 값보다 작은 id 의 물건만 응답한다")
+    void getFavoriteItemsWithCursor() throws Exception {
+        memberItemRepository.save(MemberItem.asFavorite(1L, "여권", "서류"));
+        memberItemRepository.save(MemberItem.asFavorite(1L, "선글라스", null));
+        MemberItem third = memberItemRepository.save(MemberItem.asFavorite(1L, "보조배터리", null));
+
+        // when // then — third 의 id 를 커서로 보내면 third 는 빠지고 second, first 순
+        mockMvc.perform(get("/api/v1/members/me/items/favorites")
+                        .param("cursor", String.valueOf(third.getId()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(2))
+                .andExpect(jsonPath("$.data.items[0].name").value("선글라스"))
+                .andExpect(jsonPath("$.data.items[1].name").value("여권"))
+                .andExpect(jsonPath("$.data.hasNext").value(false));
+    }
+
+    @Test
+    @DisplayName("자주 담은 물건을 조회하면 담은 횟수 순으로 이미지·이름만 담긴 items 를 응답한다")
+    void getFrequentItems() throws Exception {
+        // given — 여권 2번(사진 있음), 충전기 1번(사진 없음)
+        Trip trip = tripRepository.save(Trip.builder()
+                .memberId(1L)
+                .country("일본")
+                .region("오사카")
+                .startDate(LocalDate.now().minusDays(5))
+                .endDate(LocalDate.now().minusDays(2))
+                .purposes(List.of("휴가"))
+                .latitude(34.6937)
+                .longitude(135.5023)
+                .build());
+        Bag bag = bagRepository.save(Bag.createDefault(trip.getId(), 1L));
+        bagItemRepository.save(BagItem.createRecognized(trip.getId(), 1L, "여권", "서류", bag.getId(), "https://s3/1/passport.png"));
+        bagItemRepository.save(BagItem.createRecognized(trip.getId(), 1L, "여권", "서류", bag.getId(), "https://s3/1/passport-2.png"));
+        BagItem charger = bagItemRepository.save(BagItem.create(trip.getId(), 1L, "충전기", "전자기기", 1, bag.getId()));
+        charger.update(null, null, null, true, null);
+
+        // when // then
+        mockMvc.perform(get("/api/v1/members/me/items/frequent")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(2))
+                .andExpect(jsonPath("$.data.items[0].name").value("여권"))
+                .andExpect(jsonPath("$.data.items[0].imageUrl").value("https://s3/1/passport-2.png"))
+                .andExpect(jsonPath("$.data.items[1].name").value("충전기"))
+                .andExpect(jsonPath("$.data.items[1].imageUrl").value((Object) null))
+                .andExpect(jsonPath("$.data.hasNext").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("담은 물건이 없으면 자주 담은 물건은 200 과 빈 items 를 응답한다")
+    void getFrequentItemsEmpty() throws Exception {
+        mockMvc.perform(get("/api/v1/members/me/items/frequent")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(0));
+    }
+
+    @Test
+    @DisplayName("토큰이 없으면 즐겨찾기 물건·자주 담은 물건 조회 모두 401 을 응답한다")
+    void getFavoriteAndFrequentItemsUnauthorized() throws Exception {
+        mockMvc.perform(get("/api/v1/members/me/items/favorites"))
+                .andDo(print())
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/members/me/items/frequent"))
+                .andDo(print())
+                .andExpect(status().isUnauthorized());
+    }
+
     private String bearer(Long memberId) {
         return "Bearer " + jwtTokenProvider.createAccessToken(memberId, Role.USER);
     }
