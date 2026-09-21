@@ -1,6 +1,9 @@
 package ssafy.checkmate.domain.member;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
@@ -15,7 +18,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,6 +35,7 @@ import ssafy.checkmate.domain.member.repository.MemberItemRepository;
 import ssafy.checkmate.domain.trip.entity.Trip;
 import ssafy.checkmate.domain.trip.repository.TripRepository;
 import ssafy.checkmate.global.auth.JwtTokenProvider;
+import ssafy.checkmate.global.storage.ImageStorage;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -53,6 +60,31 @@ class MemberItemControllerTest {
 
     @Autowired
     private JwtTokenProvider jwtTokenProvider;
+
+    @MockitoBean
+    private ImageStorage imageStorage;
+
+    @Test
+    @DisplayName("물건 사진을 올리면 200 과 imageUrl 이 채워진 한 줄을 응답한다. 파일 없으면 400, 없는 물건 404")
+    void updateImage() throws Exception {
+        MemberItem item = memberItemRepository.save(MemberItem.asFavorite(1L, "이어폰", "전자기기"));
+        given(imageStorage.upload(any(), any())).willReturn("https://s3/1/items/earbuds.png");
+
+        mockMvc.perform(multipart(HttpMethod.PUT, "/api/v1/members/me/items/{itemId}/image", item.getId())
+                        .file(new MockMultipartFile("image", "cutout.png", "image/png", "png".getBytes()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L)))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.itemId").value(item.getId()))
+                .andExpect(jsonPath("$.data.imageUrl").value("https://s3/1/items/earbuds.png"));
+        mockMvc.perform(multipart(HttpMethod.PUT, "/api/v1/members/me/items/{itemId}/image", item.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L)))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(multipart(HttpMethod.PUT, "/api/v1/members/me/items/{itemId}/image", 999_999L)
+                        .file(new MockMultipartFile("image", "c.png", "image/png", "png".getBytes()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(1L)))
+                .andExpect(status().isNotFound());
+    }
 
     @Test
     @DisplayName("내 물건 목록을 조회하면 담은 횟수·즐겨찾기가 담긴 items 를 응답한다")

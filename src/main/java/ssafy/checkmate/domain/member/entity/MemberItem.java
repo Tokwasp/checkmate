@@ -48,6 +48,12 @@ public class MemberItem extends BaseEntity {
     @Column(nullable = false)
     private boolean favorite;
 
+    /**
+     * 대표 사진(누끼) URL. 짐싸기에서 즐겨찾기하면 그 인벤토리 누끼(BagItem.imageUrl, S3)를 그대로 복사하고,
+     * 「내 물건」 카메라 등록은 사진 업로드 API 로 채운다. 없으면 null — 화면은 아이콘으로 대신한다.
+     */
+    private String imageUrl;
+
     private MemberItem(Long memberId, String name, String category, boolean favorite) {
         this.memberId = memberId;
         this.name = name;
@@ -71,6 +77,17 @@ public class MemberItem extends BaseEntity {
 
     public void setFavorite(boolean favorite) {
         this.favorite = favorite;
+    }
+
+    public void updateImage(String imageUrl) {
+        this.imageUrl = imageUrl;
+    }
+
+    /** 사진이 없을 때만 채운다 — 사용자가 직접 올린 사진을 인벤토리 누끼가 덮어쓰지 않게. */
+    public void fillImageIfEmpty(String imageUrl) {
+        if (this.imageUrl == null && imageUrl != null) {
+            this.imageUrl = imageUrl;
+        }
     }
 
     /** 분류를 모르던 물건이 나중에 분류가 붙은 채로 담기면 채운다. 이미 있으면 두던 대로 둔다. */

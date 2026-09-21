@@ -8,15 +8,19 @@ import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+import ssafy.checkmate.domain.checklist.entity.BagItem;
 import ssafy.checkmate.domain.checklist.repository.BagItemRepository;
 import ssafy.checkmate.domain.checklist.repository.PackedNameCount;
 import ssafy.checkmate.domain.member.dto.request.MemberFavoriteItemRequest;
 import ssafy.checkmate.domain.member.dto.response.MemberItemResponse;
 import ssafy.checkmate.domain.member.dto.response.MemberItemsResponse;
 import ssafy.checkmate.domain.member.entity.MemberItem;
+import ssafy.checkmate.domain.member.exception.InvalidItemImageException;
 import ssafy.checkmate.domain.member.exception.MemberItemAccessDeniedException;
 import ssafy.checkmate.domain.member.exception.MemberItemNotFoundException;
 import ssafy.checkmate.domain.member.repository.MemberItemRepository;
+import ssafy.checkmate.global.storage.ImageStorage;
 
 /**
  * 마이페이지 「내 물건」 — 회원이 여행을 가로질러 담아 온 물건과 즐겨찾기.
@@ -28,6 +32,7 @@ public class MemberItemService {
 
     private final MemberItemRepository memberItemRepository;
     private final BagItemRepository bagItemRepository;
+    private final ImageStorage imageStorage;
 
     /**
      * 내 물건 목록. 두 출처를 합친다.
@@ -57,6 +62,7 @@ public class MemberItemService {
         for (MemberItem item : memberItemRepository.findAllByMemberId(memberId)) {
             master.put(item.getName(), item);
         }
+        Map<String, String> inventoryImageByName = latestInventoryImages(memberId);
 
         List<MemberItem> missing = new ArrayList<>();
         for (PackedNameCount p : packed) {
@@ -74,7 +80,8 @@ public class MemberItemService {
         }
 
         List<MemberItemResponse> items = master.values().stream()
-                .map(item -> MemberItemResponse.of(item, countByName.getOrDefault(item.getName(), 0L)))
+                .map(item -> MemberItemResponse.of(item, countByName.getOrDefault(item.getName(), 0L),
+                        resolveImage(item, inventoryImageByName.get(item.getName()))))
                 .sorted(Comparator.comparingLong(MemberItemResponse::packedCount).reversed()
                         .thenComparing(MemberItemResponse::name))
                 .toList();
@@ -89,8 +96,7 @@ public class MemberItemService {
             throw new MemberItemAccessDeniedException();
         }
         item.setFavorite(favorite);
-        long packedCount = bagItemRepository.countByMemberIdAndNameAndDepartureChecked(memberId, item.getName(), true);
-        return MemberItemResponse.of(item, packedCount);
+        return toResponse(memberId, item);
     }
 
     /**
@@ -103,15 +109,61 @@ public class MemberItemService {
      */
     @Transactional
     public MemberItemsResponse addFavorites(Long memberId, List<MemberFavoriteItemRequest> requests) {
+        // 짐싸기에서 찍은 누끼는 이미 S3(BagItem.imageUrl)에 있다 — 다시 올리지 않고 URL 만 복사한다
+        Map<String, String> inventoryImageByName = latestInventoryImages(memberId);
         for (MemberFavoriteItemRequest request : requests) {
             MemberItem existing = memberItemRepository.findByMemberIdAndName(memberId, request.getName()).orElse(null);
             if (existing == null) {
-                memberItemRepository.save(MemberItem.asFavorite(memberId, request.getName(), request.getCategory()));
+                existing = memberItemRepository.save(
+                        MemberItem.asFavorite(memberId, request.getName(), request.getCategory()));
             } else {
                 existing.setFavorite(true);
                 existing.fillCategoryIfEmpty(request.getCategory());
             }
+            existing.fillImageIfEmpty(inventoryImageByName.get(request.getName()));
         }
         return getMyItems(memberId);
+    }
+
+    /**
+     * 물건 대표 사진 교체 — 「내 물건」 카메라 등록이 올린다. 인벤토리를 거치지 않은 누끼는 서버에 없으므로
+     * 여기서 처음 저장한다. 회원 폴더 아래 items/{itemId}. 프로필·표지 사진과 같은 저장소·검증.
+     */
+    @Transactional
+    public MemberItemResponse updateImage(Long memberId, Long itemId, MultipartFile image) {
+        if (image == null || image.isEmpty()) {
+            throw new InvalidItemImageException();
+        }
+        String contentType = image.getContentType();
+        if (contentType == null || !contentType.startsWith("image/")) {
+            throw new InvalidItemImageException();
+        }
+        MemberItem item = memberItemRepository.findById(itemId).orElseThrow(MemberItemNotFoundException::new);
+        if (!item.isOwnedBy(memberId)) {
+            throw new MemberItemAccessDeniedException();
+        }
+        item.updateImage(imageStorage.upload(image, memberId + "/items/" + itemId));
+        return toResponse(memberId, item);
+    }
+
+    /** 이름별 최근 인벤토리 누끼 — 회원의 사진 있는 물품을 최근 순으로 훑어 이름마다 첫 것만 남긴다 */
+    private Map<String, String> latestInventoryImages(Long memberId) {
+        Map<String, String> byName = new HashMap<>();
+        for (BagItem item : bagItemRepository.findAllByMemberIdAndImageUrlIsNotNullOrderByIdDesc(memberId)) {
+            byName.putIfAbsent(item.getName(), item.getImageUrl());
+        }
+        return byName;
+    }
+
+    /** 마스터에 사진이 있으면 그것, 없으면 인벤토리 누끼, 그것도 없으면 null */
+    private static String resolveImage(MemberItem item, String inventoryImage) {
+        return item.getImageUrl() != null ? item.getImageUrl() : inventoryImage;
+    }
+
+    /** 한 건 응답 — 담은 횟수와 사진을 그 물건에 대해서만 다시 구한다 */
+    private MemberItemResponse toResponse(Long memberId, MemberItem item) {
+        long packedCount = bagItemRepository.countByMemberIdAndNameAndDepartureChecked(memberId, item.getName(), true);
+        return MemberItemResponse.of(item, packedCount,
+                resolveImage(item, latestInventoryImages(memberId).get(item.getName())));
     }
 }

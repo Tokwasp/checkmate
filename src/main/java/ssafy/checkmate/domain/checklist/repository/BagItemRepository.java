@@ -41,6 +41,9 @@ public interface BagItemRepository extends JpaRepository<BagItem, Long> {
 
     long countByBagIdAndDepartureChecked(Long bagId, boolean departureChecked);
 
+    /** 회원의 물품 중 누끼가 있는 것, 최근 것 먼저 — 「내 물건」이 이름별 대표 사진을 고를 때 쓴다 */
+    List<BagItem> findAllByMemberIdAndImageUrlIsNotNullOrderByIdDesc(Long memberId);
+
     /** 회원이 특정 이름의 물건을 담은 횟수 — 즐겨찾기 토글 응답이 한 건만 다시 셀 때 쓴다 */
     long countByMemberIdAndNameAndDepartureChecked(Long memberId, String name, boolean departureChecked);
 
