@@ -3,6 +3,9 @@ package ssafy.checkmate.domain.member;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.given;
 
 import tools.jackson.databind.ObjectMapper;
 import java.util.HashMap;
@@ -14,7 +17,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 import ssafy.checkmate.domain.checklist.entity.Bag;
 import ssafy.checkmate.domain.checklist.entity.BagItem;
@@ -24,12 +29,14 @@ import ssafy.checkmate.domain.member.dto.request.MemberFavoriteItemRequest;
 import ssafy.checkmate.domain.member.dto.response.MemberItemResponse;
 import ssafy.checkmate.domain.member.dto.response.MemberItemsResponse;
 import ssafy.checkmate.domain.member.entity.MemberItem;
+import ssafy.checkmate.domain.member.exception.InvalidItemImageException;
 import ssafy.checkmate.domain.member.exception.MemberItemAccessDeniedException;
 import ssafy.checkmate.domain.member.exception.MemberItemNotFoundException;
 import ssafy.checkmate.domain.member.repository.MemberItemRepository;
 import ssafy.checkmate.domain.member.service.MemberItemService;
 import ssafy.checkmate.domain.trip.entity.Trip;
 import ssafy.checkmate.domain.trip.repository.TripRepository;
+import ssafy.checkmate.global.storage.ImageStorage;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -50,6 +57,58 @@ class MemberItemServiceTest {
 
     @Autowired
     private BagItemRepository bagItemRepository;
+
+    /** 실제 저장소(로컬 파일)에 쓰지 않도록 흉내 낸다 */
+    @MockitoBean
+    private ImageStorage imageStorage;
+
+    @Test
+    @DisplayName("짐싸기에서 찍은 누끼가 있는 물건을 즐겨찾기하면 그 사진 URL 이 마스터로 복사되고, 안 한 물건도 목록에선 누끼로 보인다")
+    void addFavoritesCopiesInventoryCutout() {
+        Long me = 1L;
+        Trip trip = createTrip(me, "도쿄");
+        Long bag = bagRepository.save(Bag.createDefault(trip.getId(), me)).getId();
+        // 스캔으로 담긴 물품 — 누끼가 S3(여기선 URL 문자열) 에 있다
+        bagItemRepository.save(BagItem.createRecognized(trip.getId(), me, "여권", "서류", bag, "https://s3/1/passport-old.png"));
+        bagItemRepository.save(BagItem.createRecognized(trip.getId(), me, "여권", "서류", bag, "https://s3/1/passport-new.png"));
+        bagItemRepository.save(BagItem.createRecognized(trip.getId(), me, "충전기", "전자기기", bag, "https://s3/1/charger.png"));
+
+        MemberItemsResponse response = memberItemService.addFavorites(me, List.of(favorite("여권", null)));
+
+        // 즐겨찾기한 여권: 가장 최근 누끼가 마스터에 복사됨
+        assertThat(memberItemRepository.findByMemberIdAndName(me, "여권").orElseThrow().getImageUrl())
+                .isEqualTo("https://s3/1/passport-new.png");
+        // 즐겨찾기 안 한 충전기: 마스터엔 사진이 없어도 목록 응답은 인벤토리 누끼로 폴백
+        assertThat(response.items())
+                .extracting(MemberItemResponse::name, MemberItemResponse::imageUrl)
+                .containsExactlyInAnyOrder(
+                        tuple("여권", "https://s3/1/passport-new.png"),
+                        tuple("충전기", "https://s3/1/charger.png"));
+        assertThat(memberItemRepository.findByMemberIdAndName(me, "충전기").orElseThrow().getImageUrl()).isNull();
+    }
+
+    @Test
+    @DisplayName("물건 사진을 올리면 회원/물건 폴더에 저장되고 응답·마스터에 반영된다. 무효 파일·남의 물건은 거절")
+    void updateImage() {
+        Long me = 1L;
+        MemberItem mine = memberItemRepository.save(MemberItem.asFavorite(me, "이어폰", "전자기기"));
+        MemberItem others = memberItemRepository.save(MemberItem.asFavorite(2L, "남의 이어폰", null));
+        given(imageStorage.upload(any(), eq(me + "/items/" + mine.getId()))).willReturn("https://s3/1/items/earbuds.png");
+
+        MemberItemResponse response = memberItemService.updateImage(me, mine.getId(),
+                new MockMultipartFile("image", "cutout.png", "image/png", "png".getBytes()));
+
+        assertThat(response.imageUrl()).isEqualTo("https://s3/1/items/earbuds.png");
+        assertThat(memberItemRepository.findById(mine.getId()).orElseThrow().getImageUrl()).isEqualTo("https://s3/1/items/earbuds.png");
+        assertThatThrownBy(() -> memberItemService.updateImage(me, mine.getId(), null))
+                .isInstanceOf(InvalidItemImageException.class);
+        assertThatThrownBy(() -> memberItemService.updateImage(me, mine.getId(),
+                new MockMultipartFile("image", "note.txt", "text/plain", "x".getBytes())))
+                .isInstanceOf(InvalidItemImageException.class);
+        assertThatThrownBy(() -> memberItemService.updateImage(me, others.getId(),
+                new MockMultipartFile("image", "c.png", "image/png", "png".getBytes())))
+                .isInstanceOf(MemberItemAccessDeniedException.class);
+    }
 
     @Test
     @DisplayName("내 물건 목록은 여행을 가로질러 담은 횟수를 세고, 즐겨찾기만 한 물건도 포함하며, 남의 것과 안 담은 것은 뺀다")

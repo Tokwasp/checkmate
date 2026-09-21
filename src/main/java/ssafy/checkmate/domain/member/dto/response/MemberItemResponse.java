@@ -10,9 +10,12 @@ public record MemberItemResponse(
         String category,
         boolean isFavorite,
         /** 지금까지 담은 횟수. 즐겨찾기만 하고 아직 안 담았으면 0 */
-        long packedCount
+        long packedCount,
+        /** 대표 사진(누끼). 마스터에 없으면 같은 이름의 최근 인벤토리 누끼, 그것도 없으면 null */
+        String imageUrl
 ) {
-    public static MemberItemResponse of(MemberItem item, long packedCount) {
-        return new MemberItemResponse(item.getId(), item.getName(), item.getCategory(), item.isFavorite(), packedCount);
+    public static MemberItemResponse of(MemberItem item, long packedCount, String imageUrl) {
+        return new MemberItemResponse(item.getId(), item.getName(), item.getCategory(), item.isFavorite(), packedCount,
+                imageUrl);
     }
 }

@@ -1,7 +1,11 @@
 package ssafy.checkmate.domain.checklist.entity;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * 반입 규정 검사(30번)에서 {@code Trip.country}를 지식베이스 필터 코드로 바꾸는 매핑표.
@@ -29,6 +33,14 @@ public enum CountryJurisdiction {
 
     /** 국가를 가리지 않는 공통 규정 문서의 jurisdictions 값. */
     public static final String GLOBAL_CODE = "GLOBAL";
+
+    /** 지원하는 국가의 모든 이름(별칭 포함) — {@link #resolveName(String)}의 조회표. */
+    private static final Set<String> SUPPORTED_NAMES = Arrays.stream(values())
+            .flatMap(jurisdiction -> jurisdiction.names.stream())
+            .collect(Collectors.toUnmodifiableSet());
+
+    /** 국가 텍스트를 낱말로 끊는 기준 — 공백과 쉼표. */
+    private static final Pattern NAME_DELIMITER = Pattern.compile("[,\\s]+");
 
     /**
      * 그 나라 규정 문서가 쓰인 언어. 검색 별칭을 고를 때 쓴다
@@ -61,6 +73,23 @@ public enum CountryJurisdiction {
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * 구글 자동완성이 준 국가 텍스트에서 지원 국가 이름 하나를 골라낸다.
+     *
+     * 후보의 국가 텍스트는 "일본"처럼 국가만 오기도 하고 "일본 도쿄도"처럼 상위 행정구역이
+     * 붙어 오기도 해서, 통째로는 {@link #from(String)}에 걸리지 않는다. 그래서 낱말로 끊은 뒤
+     * 지원 국가 이름과 맞는 첫 낱말을 국가로 확정한다. 맞는 낱말이 없으면 비어 있는 값을
+     * 주고, 그 후보를 어떻게 할지는 부르는 쪽에 맡긴다.
+     */
+    public static Optional<String> resolveName(String text) {
+        if (text == null) {
+            return Optional.empty();
+        }
+        return NAME_DELIMITER.splitAsStream(text.trim())
+                .filter(SUPPORTED_NAMES::contains)
+                .findFirst();
     }
 
     /** 검색 필터에 넣을 코드 목록 — 해당 국가와 공통 문서를 함께 본다. */

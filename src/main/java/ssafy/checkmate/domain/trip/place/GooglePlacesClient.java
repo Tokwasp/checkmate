@@ -7,6 +7,7 @@ import lombok.Setter;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import ssafy.checkmate.domain.checklist.entity.CountryJurisdiction;
 import ssafy.checkmate.domain.trip.exception.TripInvalidDestinationException;
 
 /**
@@ -103,6 +104,12 @@ public class GooglePlacesClient {
         /**
          * 국가 후보(예: "일본" 자체를 검색)는 secondaryText가 없어 region을 못 채운다 —
          * types에 country가 있으면 mainText를 country로, 아니면 region으로 취급한다.
+         *
+         * 도시 후보의 국가 텍스트는 "일본 도쿄도"처럼 상위 행정구역이 섞여 오므로 그대로 두면
+         * 나중에 반입 규정 검사가 국가를 못 알아본다 —
+         * {@link CountryJurisdiction#resolveName(String)}으로 지원 국가 이름만 뽑아낸다.
+         * 지원 국가가 없으면 구글이 준 텍스트를 그대로 남긴다(목적지로는 고를 수 있고,
+         * 규정 검사만 그 시점에 거절한다).
          */
         private PlaceSuggestion toPlaceSuggestion() {
             StructuredFormat format = placePrediction.getStructuredFormat();
@@ -110,7 +117,8 @@ public class GooglePlacesClient {
             String secondaryText = format.getSecondaryText() != null ? format.getSecondaryText().getText() : null;
 
             boolean isCountry = placePrediction.getTypes() != null && placePrediction.getTypes().contains(COUNTRY_TYPE);
-            String country = isCountry ? mainText : secondaryText;
+            String countryText = isCountry ? mainText : secondaryText;
+            String country = CountryJurisdiction.resolveName(countryText).orElse(countryText);
             String region = isCountry ? null : mainText;
             return new PlaceSuggestion(placePrediction.getPlaceId(), country, region);
         }

@@ -38,3 +38,6 @@ out/
 
 ### VS Code ###
 .vscode/
+
+# 로컬 이미지 저장소(LocalImageStorage 기본 경로) — S3 없을 때 서버가 여기 쓴다
+uploads/
