@@ -46,6 +46,15 @@ public class Member extends BaseEntity {
     @Column(nullable = false, columnDefinition = "INT NOT NULL DEFAULT 0")
     private int securityCheckCount = 0;
 
+    /**
+     * 촬영 물품 반입 판정(35번)을 호출한 누적 횟수. 30번의 {@link #securityCheckCount}와 <b>따로</b>
+     * 센다 — 규정 검사를 다 써도 물품 분석이 막히지 않게 하기 위해서다. 상한과 증가 시점은
+     * {@code QuarantineCheckService}가 관리하고, 증가는 조건부 UPDATE 한 문장으로 처리한다
+     * ({@code MemberRepository#consumeItemAnalysisQuota}).
+     */
+    @Column(nullable = false, columnDefinition = "INT NOT NULL DEFAULT 0")
+    private int itemAnalysisCount = 0;
+
     @Builder
     public Member(String email, String nickname, String profileImageUrl, Provider provider) {
         this.email = email;
@@ -54,6 +63,7 @@ public class Member extends BaseEntity {
         this.provider = provider;
         this.role = Role.USER;
         this.securityCheckCount = 0;
+        this.itemAnalysisCount = 0;
     }
 
     /** 프로필 사진 URL 을 바꾼다. null 이면 기본 아이콘으로 돌아간다 (마이페이지 사진 삭제). */
