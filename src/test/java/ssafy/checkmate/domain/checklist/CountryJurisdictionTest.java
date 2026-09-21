@@ -53,6 +53,42 @@ class CountryJurisdictionTest {
         assertThat(CountryJurisdiction.from("  일본  ")).contains(CountryJurisdiction.JP);
     }
 
+    @ParameterizedTest
+    @CsvSource({
+            "일본, 일본",
+            "'일본 도쿄도', 일본",
+            "'일본 도쿄도 시부야구', 일본",
+            "'도쿄도, 일본', 일본",
+            "'  일본  ', 일본",
+            "'미국 캘리포니아주', 미국",
+            "'대한민국 경기도', 대한민국"
+    })
+    @DisplayName("국가 텍스트에 상위 행정구역이 섞여 있어도 지원 국가 이름만 뽑아낸다")
+    void resolvesSupportedCountryName(String text, String expected) {
+        assertThat(CountryJurisdiction.resolveName(text)).contains(expected);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"독일 바이에른주", "브라질", "미국령 사모아"})
+    @DisplayName("지원 국가 이름이 하나도 없으면 아무것도 뽑지 않는다")
+    void resolvesNothingForUnsupportedText(String text) {
+        assertThat(CountryJurisdiction.resolveName(text)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("국가 텍스트가 null이어도 안전하게 처리한다")
+    void resolveNameHandlesNull() {
+        assertThat(CountryJurisdiction.resolveName(null)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("뽑아낸 국가 이름은 곧바로 관할 코드로 이어진다")
+    void resolvedNameMapsToJurisdiction() {
+        String country = CountryJurisdiction.resolveName("일본 도쿄도").orElseThrow();
+
+        assertThat(CountryJurisdiction.from(country)).contains(CountryJurisdiction.JP);
+    }
+
     @Test
     @DisplayName("검색 필터에는 국가 코드와 공통 문서 코드(GLOBAL)를 함께 넣는다")
     void filterCodesIncludeGlobal() {
