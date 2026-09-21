@@ -64,6 +64,7 @@ public class ChecklistService {
     private final BagService bagService;
     private final TripWeatherRepository tripWeatherRepository;
     private final ChecklistRecommendationEngine recommendationEngine;
+    private final ChecklistCategoryInferrer categoryInferrer;
 
     @Transactional
     public ChecklistItemsResponse recommend(Long tripId, Long memberId) {
@@ -133,11 +134,20 @@ public class ChecklistService {
         Map<Long, Bag> bagsById = new HashMap<>(requestedBagsById);
         bagsById.put(defaultBag.getId(), defaultBag);
 
+        Map<String, String> inferredCategories = categoryInferrer.infer(requestedItems.stream()
+                .filter(item -> isBlank(item.getCategory()))
+                .map(ChecklistItemCreateRequest::getName)
+                .toList());
+
         List<BagItem> savedItems = requestedItems.stream()
                 .map(item -> {
                     Long bagId = item.getBagId() != null ? item.getBagId() : defaultBag.getId();
+                    String category = isBlank(item.getCategory())
+                            ? inferredCategories.getOrDefault(
+                                    item.getName().strip(), ChecklistCategoryInferrer.FALLBACK_CATEGORY)
+                            : item.getCategory();
                     return bagItemRepository.save(BagItem.create(
-                            tripId, memberId, item.getName(), item.getCategory(), item.getQuantity(), bagId));
+                            tripId, memberId, item.getName(), category, item.getQuantity(), bagId));
                 })
                 .toList();
 
@@ -313,5 +323,9 @@ public class ChecklistService {
         List<Long> ids = bagIds.distinct().toList();
         return bagRepository.findAllById(ids).stream()
                 .collect(Collectors.toMap(Bag::getId, Function.identity()));
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

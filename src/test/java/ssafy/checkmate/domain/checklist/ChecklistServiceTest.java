@@ -2,8 +2,10 @@ package ssafy.checkmate.domain.checklist;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
 import static ssafy.checkmate.domain.checklist.TestRequestFactory.checklistItemCreateRequest;
 import static ssafy.checkmate.domain.checklist.TestRequestFactory.checklistItemUpdateRequest;
 import static ssafy.checkmate.domain.checklist.TestRequestFactory.checklistItemsCreateRequest;
@@ -12,6 +14,7 @@ import static ssafy.checkmate.domain.checklist.TestRequestFactory.checklistItems
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,6 +46,7 @@ import ssafy.checkmate.domain.checklist.repository.BagItemRepository;
 import ssafy.checkmate.domain.checklist.repository.BagItemRiskLevelRepository;
 import ssafy.checkmate.domain.checklist.repository.BagRepository;
 import ssafy.checkmate.domain.checklist.repository.RiskLevelRepository;
+import ssafy.checkmate.domain.checklist.service.ChecklistCategoryInferrer;
 import ssafy.checkmate.domain.checklist.service.ChecklistRecommendationEngine;
 import ssafy.checkmate.domain.checklist.service.ChecklistService;
 import ssafy.checkmate.domain.checklist.service.RecommendedItem;
@@ -84,6 +88,9 @@ class ChecklistServiceTest {
 
     @MockitoBean
     private ChecklistRecommendationEngine recommendationEngine;
+
+    @MockitoBean
+    private ChecklistCategoryInferrer categoryInferrer;
 
     @Test
     @DisplayName("추천 항목을 여행의 기본 가방에 담아 저장한다")
@@ -296,6 +303,59 @@ class ChecklistServiceTest {
                 .filter(i -> i.getName().equals("선크림")).findFirst().orElseThrow();
         assertThat(withBag.getBagName()).isEqualTo("내 캐리어");
         assertThat(withoutBag.getBagName()).isEqualTo("NONE");
+    }
+
+    @Test
+    @DisplayName("카테고리를 보내지 않은 항목은 이름으로 추론한 카테고리로 저장하고, 보낸 항목은 그대로 둔다")
+    void addItemsInfersMissingCategory() {
+        // given
+        Trip trip = createTrip(1L);
+        given(categoryInferrer.infer(List.of("선크림", "멀티어댑터")))
+                .willReturn(Map.of("선크림", "생활용품", "멀티어댑터", "전자기기"));
+
+        // when
+        ChecklistItemsResponse response = checklistService.addItems(trip.getId(), 1L, checklistItemsCreateRequest(List.of(
+                checklistItemCreateRequest("선크림", null, 1, null),
+                checklistItemCreateRequest("멀티어댑터", " ", 1, null),
+                checklistItemCreateRequest("여권", "서류", 1, null))));
+
+        // then
+        assertThat(response.getItems())
+                .extracting(ChecklistItemResponse::getName, ChecklistItemResponse::getCategory)
+                .containsExactlyInAnyOrder(
+                        tuple("선크림", "생활용품"),
+                        tuple("멀티어댑터", "전자기기"),
+                        tuple("여권", "서류"));
+    }
+
+    @Test
+    @DisplayName("카테고리를 추론하지 못한 항목은 기타로 저장한다")
+    void addItemsFallsBackToEtcCategory() {
+        // given
+        Trip trip = createTrip(1L);
+        given(categoryInferrer.infer(any())).willReturn(Map.of());
+
+        // when
+        ChecklistItemsResponse response = checklistService.addItems(trip.getId(), 1L, checklistItemsCreateRequest(
+                List.of(checklistItemCreateRequest("정체불명", null, 1, null))));
+
+        // then
+        assertThat(response.getItems()).singleElement()
+                .extracting(ChecklistItemResponse::getCategory).isEqualTo("기타");
+    }
+
+    @Test
+    @DisplayName("모든 항목이 카테고리를 보냈어도 추론기에는 빈 목록이 넘어간다")
+    void addItemsWithAllCategoriesAsksNothing() {
+        // given
+        Trip trip = createTrip(1L);
+
+        // when
+        checklistService.addItems(trip.getId(), 1L, checklistItemsCreateRequest(
+                List.of(checklistItemCreateRequest("여권", "서류", 1, null))));
+
+        // then
+        verify(categoryInferrer).infer(List.of());
     }
 
     @Test
