@@ -336,20 +336,42 @@ class SecurityCheckServiceTest {
     }
 
     @Test
-    @DisplayName("담기지 않은 물품도 검사 대상에 포함한다")
-    void checkIncludesUncheckedItems() {
+    @DisplayName("담기지 않은 물품은 검사 대상에서 뺀다")
+    void checkExcludesUnpackedItems() {
         // given
         Trip trip = saveTrip(MEMBER_ID, "일본");
         Bag cabin = saveBag(trip, "기내백", CarriageType.CABIN);
-        BagItem unchecked = saveItem(trip, cabin, "여권");
+        BagItem packed = saveItem(trip, cabin, "맥가이버칼");
+        BagItem unpacked = saveUnpackedItem(trip, cabin, "여권");
         given(aviationRegulationClient.judge(any(), any())).willReturn(List.of());
 
         // when
         SecurityCheckResponse response = securityCheckService.check(trip.getId(), MEMBER_ID);
 
         // then
-        assertThat(unchecked.isDepartureChecked()).isFalse();
-        assertThat(response.getItems()).hasSize(1);
+        assertThat(unpacked.isDepartureChecked()).isFalse();
+        assertThat(response.getItems()).extracting(SecurityCheckItemResponse::getItemId)
+                .containsExactly(packed.getId());
+
+        ArgumentCaptor<List<SecurityCheckTarget>> captor = ArgumentCaptor.captor();
+        verify(aviationRegulationClient).judge(any(), captor.capture());
+        assertThat(captor.getValue()).extracting(SecurityCheckTarget::getName)
+                .containsExactly("맥가이버칼");
+    }
+
+    @Test
+    @DisplayName("체크리스트에 물품이 있어도 담긴 게 하나도 없으면 검사하지 않는다")
+    void checkRejectsTripWithNothingPacked() {
+        // given
+        Trip trip = saveTrip(MEMBER_ID, "일본");
+        Bag cabin = saveBag(trip, "기내백", CarriageType.CABIN);
+        saveUnpackedItem(trip, cabin, "여권");
+
+        // when & then
+        assertThatThrownBy(() -> securityCheckService.check(trip.getId(), MEMBER_ID))
+                .isInstanceOf(NoItemsToCheckException.class);
+        verify(aviationRegulationClient, never()).judge(any(), any());
+        assertThat(countOf(MEMBER_ID)).isZero();
     }
 
     @Test
@@ -600,7 +622,9 @@ class SecurityCheckServiceTest {
         exhaustQuota(MEMBER_ID);
         Trip trip = saveTrip(OTHER_MEMBER_ID, "일본");
         Bag cabin = saveBag(trip, "기내백", CarriageType.CABIN);
-        bagItemRepository.save(BagItem.create(trip.getId(), OTHER_MEMBER_ID, "여권", "기타", 1, cabin.getId()));
+        BagItem item = BagItem.create(trip.getId(), OTHER_MEMBER_ID, "여권", "기타", 1, cabin.getId());
+        item.update(null, null, null, true, null);
+        bagItemRepository.save(item);
         given(aviationRegulationClient.judge(any(), any())).willReturn(List.of());
 
         // when
@@ -659,7 +683,15 @@ class SecurityCheckServiceTest {
         return bagRepository.save(bag);
     }
 
+    /** 검사 대상은 가방에 담은 물품이므로 테스트 물품도 담은 상태로 만든다. */
     private BagItem saveItem(Trip trip, Bag bag, String name) {
+        BagItem item = saveUnpackedItem(trip, bag, name);
+        item.update(null, null, null, true, null);
+        return bagItemRepository.save(item);
+    }
+
+    /** 체크리스트에만 있고 아직 안 담은 물품 — 검사 대상에서 빠지는지 볼 때 쓴다. */
+    private BagItem saveUnpackedItem(Trip trip, Bag bag, String name) {
         return bagItemRepository.save(
                 BagItem.create(trip.getId(), MEMBER_ID, name, "기타", 1, bag.getId()));
     }

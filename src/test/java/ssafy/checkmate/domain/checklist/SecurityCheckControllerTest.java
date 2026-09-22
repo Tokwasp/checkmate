@@ -215,9 +215,11 @@ class SecurityCheckControllerTest {
         return bagRepository.save(bag);
     }
 
+    /** 검사 대상은 가방에 담은 물품이므로 테스트 물품도 담은 상태로 만든다. */
     private BagItem createItem(Trip trip, Bag bag, String name) {
-        return bagItemRepository.save(
-                BagItem.create(trip.getId(), MEMBER_ID, name, "기타", 1, bag.getId()));
+        BagItem item = BagItem.create(trip.getId(), MEMBER_ID, name, "기타", 1, bag.getId());
+        item.update(null, null, null, true, null);
+        return bagItemRepository.save(item);
     }
 
     private String bearer(Long memberId) {

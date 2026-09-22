@@ -15,7 +15,8 @@ public interface BagItemRepository extends JpaRepository<BagItem, Long> {
     List<BagItem> findAllByBagId(Long bagId);
 
     /**
-     * 귀가 전 점검(31번) — 그 여행에서 실제로 가방에 담은 물품 전부.
+     * 그 여행에서 실제로 가방에 담은 물품 전부 — 귀가 전 점검(31번)과 반입 규정 검사(30번)가 함께 쓴다.
+     * 두 화면이 같은 물품 집합을 봐야 "검사에는 떴는데 점검에는 없다"가 생기지 않는다.
      * 체크 여부로 정렬하지 않는다. 타일을 누를 때마다 그리드가 재배치되면 옆 칸을 잘못 누르게 된다.
      */
     List<BagItem> findAllByTripIdAndDepartureCheckedOrderByIdAsc(Long tripId, boolean departureChecked);

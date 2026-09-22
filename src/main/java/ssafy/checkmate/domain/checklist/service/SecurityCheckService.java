@@ -37,11 +37,12 @@ import ssafy.checkmate.domain.trip.repository.TripRepository;
 import ssafy.checkmate.global.exception.BusinessException;
 
 /**
- * 반입 규정 검사(30번). 여행에 담긴 물품 전부를 가방(과 carriageType)별로 묶어 항공 보안
- * 규정 지식베이스에 물어보고, 받은 판정을 물품마다 되돌려 붙인다.
+ * 반입 규정 검사(30번). 여행에서 실제로 가방에 담은 물품을 가방(과 carriageType)별로 묶어
+ * 항공 보안 규정 지식베이스에 물어보고, 받은 판정을 물품마다 되돌려 붙인다.
  *
- * 가방별이 아니라 여행 전체를 한 번에 검사한다 — 가방별·상태별 필터링은 프론트가 응답
- * 전체를 받아 처리한다. 담겼는지 여부는 가리지 않는다.
+ * 가방별이 아니라 여행 전체를 한 번에 검사한다 — 가방별 필터링은 프론트가 응답 전체를 받아
+ * 처리한다. 다만 <b>담긴 물품(departureChecked)만</b> 검사한다 — 안 가져가는 물건까지 판정하면
+ * 화면에 없는 금지 물품이 뜨고, 그만큼 규정 질의 비용도 헛되이 나간다.
  *
  * 로그는 EC2에서 흐름을 따라갈 수 있도록 {@code [security-check]} 접두사로 남긴다.
  */
@@ -89,11 +90,17 @@ public class SecurityCheckService {
         return summarize(responses);
     }
 
-    /** 담긴 물품만 거르지 않는다 — 체크리스트에만 있고 아직 안 담은 물품도 검사 대상이다. */
+    /**
+     * 담긴 물품(departureChecked)만 검사한다 — 체크리스트에만 있고 아직 안 담은 물품은 빼고 본다.
+     * 실제로 들고 가지 않는 물건의 판정은 사용자에게 의미가 없고, 규정 질의 비용만 늘린다.
+     *
+     * 체크리스트에 물품이 있어도 담긴 게 하나도 없으면 400이다 — 귀가 전 점검(31번)과 같은 기준이라
+     * 두 화면이 같은 물품 집합을 본다.
+     */
     private List<BagItem> findItemsToCheck(Long tripId) {
-        List<BagItem> items = bagItemRepository.findAllByTripId(tripId);
+        List<BagItem> items = bagItemRepository.findAllByTripIdAndDepartureCheckedOrderByIdAsc(tripId, true);
         if (items.isEmpty()) {
-            log.info("[security-check] 검사할 물품이 없다 tripId={}", tripId);
+            log.info("[security-check] 검사할 물품이 없다 — 담긴 물품이 0개다 tripId={}", tripId);
             throw new NoItemsToCheckException();
         }
         return items;
