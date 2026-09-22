@@ -2,6 +2,7 @@ package ssafy.checkmate.domain.trip.controller;
 
 import jakarta.validation.Valid;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -30,6 +31,12 @@ import ssafy.checkmate.global.response.ApiResponse;
 @RequiredArgsConstructor
 public class TripController {
 
+    /**
+     * "오늘" 은 한국 날짜다 (2026-09-23). EC2 의 기본 시간대가 UTC 라 `LocalDate.now()` 는 한국 00:00~09:00 에
+     * 아직 어제를 가리켰고, 그 사이 오늘 출발하는 여행이 '여행 예정' 으로 내려가 앱 화면이 어긋났다.
+     */
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+
     private final TripService tripService;
 
     @GetMapping("/api/v1/trips/destinations/autocomplete")
@@ -54,20 +61,20 @@ public class TripController {
 
     @GetMapping("/api/v1/trips")
     public ResponseEntity<ApiResponse<TripListResponse>> list(@LoginMember MemberPrincipal principal) {
-        return ResponseEntity.ok(ApiResponse.success(tripService.getTrips(principal.memberId(), LocalDate.now())));
+        return ResponseEntity.ok(ApiResponse.success(tripService.getTrips(principal.memberId(), LocalDate.now(KST))));
     }
 
     @GetMapping("/api/v1/trips/upcoming")
     public ResponseEntity<ApiResponse<UpcomingTripResponse>> upcoming(@LoginMember MemberPrincipal principal) {
         return ResponseEntity.ok(ApiResponse.success(
-                tripService.getUpcomingTrip(principal.memberId(), LocalDate.now())));
+                tripService.getUpcomingTrip(principal.memberId(), LocalDate.now(KST))));
     }
 
     @GetMapping("/api/v1/trips/{tripId}")
     public ResponseEntity<ApiResponse<TripDetailResponse>> detail(
             @PathVariable Long tripId, @LoginMember MemberPrincipal principal) {
         return ResponseEntity.ok(ApiResponse.success(
-                tripService.getTripDetail(tripId, principal.memberId(), LocalDate.now())));
+                tripService.getTripDetail(tripId, principal.memberId(), LocalDate.now(KST))));
     }
 
     @PutMapping("/api/v1/trips/{tripId}")
