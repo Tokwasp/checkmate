@@ -164,21 +164,12 @@ public class ChecklistRecommendationEngine {
     }
 
     private List<RecommendedItem> parse(String content) {
-        String json = stripCodeFence(content);
+        String json = GmsResponses.stripCodeFence(content);
         RecommendedItemDto[] items = objectMapper.readValue(json, RecommendedItemDto[].class);
         return List.of(items).stream()
                 .map(dto -> new RecommendedItem(dto.getName(), dto.getCategory(),
                         dto.getQuantity() == null ? 1 : dto.getQuantity()))
                 .toList();
-    }
-
-    private static String stripCodeFence(String content) {
-        String trimmed = content.trim();
-        if (trimmed.startsWith("```")) {
-            trimmed = trimmed.replaceFirst("^```[a-zA-Z]*\\n?", "");
-            trimmed = trimmed.replaceFirst("```\\s*$", "");
-        }
-        return trimmed.trim();
     }
 
     @Getter

@@ -42,8 +42,8 @@ import ssafy.checkmate.global.config.BedrockProperties;
  *
  * 항공 보안 규정을 묻는 {@link BedrockAviationRegulationClient}와 같은 지식베이스·같은
  * {@link BedrockProperties}를 쓰되 <b>필터가 다르다</b>: {@code scope=import} 이면서
- * {@code jurisdictions}에 {@code KR}. 이 묶음은 전부 한국어 한국 문서라 30번처럼 현지어 별칭을
- * 붙이지 않고 {@code GLOBAL}도 함께 넣지 않는다.
+ * {@code jurisdictions}에 {@code KR}. 이 묶음은 전부 한국어 한국 문서라 30번처럼 물품 이름을
+ * 현지어로 옮겨 붙이지 않고 {@code GLOBAL}도 함께 넣지 않는다.
  *
  * 검색(Retrieve)과 생성(Converse)을 나눈 이유는 30번과 같다 — 도구 사용(tool use)으로 출력
  * 스키마를 강제해 텍스트 파싱 실패를 없앤다.

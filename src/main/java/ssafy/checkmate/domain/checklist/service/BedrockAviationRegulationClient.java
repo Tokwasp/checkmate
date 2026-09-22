@@ -124,10 +124,11 @@ public class BedrockAviationRegulationClient implements AviationRegulationClient
      * 청크가 빠져 통과로 나왔다. 안전 기능에서 금지 물품을 놓치는 건 허용할 수 없어 검색만
      * 쪼갠다. 검색은 임베딩 1회 + 벡터 쿼리라 저렴하고, 생성(Converse)은 그대로 한 번이다.
      *
-     * 검색어에는 한국어 이름뿐 아니라 <b>그 나라 말로 된 별칭</b>도 함께 싣는다
+     * 검색어에는 한국어 이름뿐 아니라 <b>그 나라 말로 옮긴 검색어</b>도 함께 싣는다
      * ({@link SecurityCheckTarget#searchTerms()}). 규정 문서가 현지어라 한국어만으로는
      * 임베딩이 매칭하지 못해 규정을 통째로 놓친다 — 예를 들어 "가위"만으로는 일본어 코퍼스의
-     * {@code はさみ} 규정이 20위 안에 안 잡히는데, 별칭을 붙이면 2위로 올라온다.
+     * {@code はさみ} 규정이 20위 안에 안 잡히는데, 현지어를 붙이면 2위로 올라온다.
+     * 옮기는 일은 {@link ItemTranslationClient}가 검색 직전에 한다.
      *
      * 같은 청크가 여러 물품에서 겹쳐 나오므로 본문 기준으로 중복을 제거한다.
      */

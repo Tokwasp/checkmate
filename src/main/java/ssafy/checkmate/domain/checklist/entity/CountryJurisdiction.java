@@ -19,17 +19,17 @@ import java.util.stream.Collectors;
  */
 public enum CountryJurisdiction {
 
-    KR("ko", "대한민국", "한국"),
-    JP("ja", "일본"),
-    CN("zh-Hans", "중국"),
-    TW("zh-Hant", "대만"),
-    TH("th", "태국"),
-    VN("vi", "베트남"),
-    PH("en", "필리핀"),
-    US("en", "미국", "미합중국"),
-    GB("en", "영국"),
-    FR("fr", "프랑스"),
-    IT("it", "이탈리아");
+    KR("한국어", "대한민국", "한국"),
+    JP("일본어", "일본"),
+    CN("중국어 간체", "중국"),
+    TW("중국어 번체", "대만"),
+    TH("태국어", "태국"),
+    VN("베트남어", "베트남"),
+    PH("영어", "필리핀"),
+    US("영어", "미국", "미합중국"),
+    GB("영어", "영국"),
+    FR("프랑스어", "프랑스"),
+    IT("이탈리아어", "이탈리아");
 
     /** 국가를 가리지 않는 공통 규정 문서의 jurisdictions 값. */
     public static final String GLOBAL_CODE = "GLOBAL";
@@ -43,23 +43,28 @@ public enum CountryJurisdiction {
     private static final Pattern NAME_DELIMITER = Pattern.compile("[,\\s]+");
 
     /**
-     * 그 나라 규정 문서가 쓰인 언어. 검색 별칭을 고를 때 쓴다
-     * ({@link ItemClass#aliasFor(String)}).
+     * 그 나라 규정 문서가 쓰인 언어. 물품 이름을 이 말로 옮겨 검색 질의에 함께 싣는다
+     * ({@link ssafy.checkmate.domain.checklist.service.ItemTranslationClient}).
      *
-     * 필리핀은 공식 항공보안 문서가 영어라 {@code en}을 쓴다. 한국은 질의 자체가 한국어라
-     * 별칭이 필요 없지만, 코드 분기를 없애려고 {@code ko}를 두고 별칭을 비워 둔다.
+     * 언어 코드가 아니라 사람이 읽는 이름을 두는 이유는 그대로 번역 모델에게 건네기 때문이다 —
+     * {@code zh-Hans}보다 "중국어 간체"가 덜 헷갈린다. 필리핀은 공식 항공보안 문서가 영어다.
      */
-    private final String language;
+    private final String languageName;
 
     private final List<String> names;
 
-    CountryJurisdiction(String language, String... names) {
-        this.language = language;
+    CountryJurisdiction(String languageName, String... names) {
+        this.languageName = languageName;
         this.names = List.of(names);
     }
 
-    public String getLanguage() {
-        return language;
+    public String getLanguageName() {
+        return languageName;
+    }
+
+    /** 규정 문서가 한국어면 물품 이름을 그대로 검색하면 되므로 번역하지 않는다. */
+    public boolean needsTranslation() {
+        return this != KR;
     }
 
     public static Optional<CountryJurisdiction> from(String country) {

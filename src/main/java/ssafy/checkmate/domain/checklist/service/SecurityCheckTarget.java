@@ -20,26 +20,27 @@ public class SecurityCheckTarget {
     private final String bagName;
     private final String carriageType;
     /**
-     * 그 나라 말로 된 검색 별칭. 규정 문서가 현지어라 한국어 이름만으로는 검색이 끊긴다 —
-     * 질의에 이 값을 함께 실어 보낸다. 마스터에 없는 물품(체크리스트 직접 추가)은 빈 문자열.
+     * 물품 이름을 그 나라 말로 옮긴 검색어. 규정 문서가 현지어라 한국어 이름만으로는 검색이
+     * 끊긴다 — 질의에 이 값을 함께 실어 보낸다
+     * ({@link ItemTranslationClient}). 번역을 못 받았거나 한국행이면 빈 문자열.
      */
-    private final String searchAlias;
+    private final String localTerms;
 
     public SecurityCheckTarget(Long itemId, String name, String bagName, String carriageType) {
         this(itemId, name, bagName, carriageType, "");
     }
 
     public SecurityCheckTarget(Long itemId, String name, String bagName, String carriageType,
-            String searchAlias) {
+            String localTerms) {
         this.itemId = itemId;
         this.name = name;
         this.bagName = bagName;
         this.carriageType = carriageType == null ? UNSPECIFIED : carriageType;
-        this.searchAlias = searchAlias == null ? "" : searchAlias.trim();
+        this.localTerms = localTerms == null ? "" : localTerms.trim();
     }
 
-    /** 검색에 쓸 문구 — 한국어 이름 + 현지어 별칭. */
+    /** 검색에 쓸 문구 — 한국어 이름 + 현지어 검색어. */
     public String searchTerms() {
-        return searchAlias.isEmpty() ? name : name + " " + searchAlias;
+        return localTerms.isEmpty() ? name : name + " " + localTerms;
     }
 }

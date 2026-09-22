@@ -26,6 +26,7 @@ import ssafy.checkmate.domain.checklist.entity.CarriageType;
 import ssafy.checkmate.domain.checklist.repository.BagItemRepository;
 import ssafy.checkmate.domain.checklist.repository.BagRepository;
 import ssafy.checkmate.domain.checklist.service.AviationRegulationClient;
+import ssafy.checkmate.domain.checklist.service.ItemTranslationClient;
 import ssafy.checkmate.domain.checklist.service.SecurityVerdict;
 import ssafy.checkmate.domain.checklist.service.VerdictLevel;
 import ssafy.checkmate.domain.member.entity.Role;
@@ -87,6 +88,10 @@ class SecurityCheckControllerTest {
 
     @MockitoBean
     private AviationRegulationClient aviationRegulationClient;
+
+    /** 검색어 번역도 실제 GMS를 부르지 않는다 — 여기서 보는 건 HTTP 응답 형식이다. */
+    @MockitoBean
+    private ItemTranslationClient itemTranslationClient;
 
     @Test
     @DisplayName("반입 규정 검사를 요청하면 개수 3종과 물품 목록을 응답한다")

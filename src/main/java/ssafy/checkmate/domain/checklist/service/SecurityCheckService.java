@@ -28,7 +28,6 @@ import ssafy.checkmate.domain.checklist.exception.UnsupportedCountryException;
 import ssafy.checkmate.domain.checklist.repository.BagItemRepository;
 import ssafy.checkmate.domain.checklist.repository.BagItemRiskLevelRepository;
 import ssafy.checkmate.domain.checklist.repository.BagRepository;
-import ssafy.checkmate.domain.checklist.repository.ItemClassRepository;
 import ssafy.checkmate.domain.checklist.repository.RiskLevelRepository;
 import ssafy.checkmate.domain.member.repository.MemberRepository;
 import ssafy.checkmate.domain.trip.entity.Trip;
@@ -63,7 +62,7 @@ public class SecurityCheckService {
     private final BagItemRiskLevelRepository bagItemRiskLevelRepository;
     private final RiskLevelRepository riskLevelRepository;
     private final TripRepository tripRepository;
-    private final ItemClassRepository itemClassRepository;
+    private final ItemTranslationClient itemTranslationClient;
     private final MemberRepository memberRepository;
     private final AviationRegulationClient aviationRegulationClient;
 
@@ -137,9 +136,10 @@ public class SecurityCheckService {
      */
     private Map<Long, SecurityVerdict> askRegulation(CountryJurisdiction jurisdiction,
             Map<ItemGroup, List<BagItem>> groups) {
+        Map<String, String> localTerms = translateNames(jurisdiction, groups.keySet());
         List<SecurityCheckTarget> targets = groups.entrySet().stream()
                 .map(entry -> entry.getKey().toTarget(representativeIdOf(entry.getValue()),
-                        aliasOf(entry.getKey().name(), jurisdiction)))
+                        localTerms.getOrDefault(entry.getKey().name(), "")))
                 .toList();
 
         List<SecurityVerdict> verdicts = callClient(jurisdiction, targets);
@@ -179,14 +179,28 @@ public class SecurityCheckService {
     }
 
     /**
-     * 그 나라 말로 된 검색 별칭을 물품 마스터에서 찾는다. 규정 문서가 현지어라 한국어
-     * 이름만으로는 임베딩이 매칭하지 못해 규정을 통째로 놓친다 — 질의에 현지어를 함께 실어야
-     * 검색이 걸린다. 마스터에 없는 물품(체크리스트로 직접 추가한 것)은 별칭 없이 진행한다.
+     * 물품 이름을 그 나라 말 검색어로 옮긴다. 규정 문서가 현지어라 한국어 이름만으로는 임베딩이
+     * 매칭하지 못해 규정을 통째로 놓친다 — 질의에 현지어를 함께 실어야 검색이 걸린다.
+     *
+     * 이름마다 부르지 않고 묶음 이름 전체를 한 번에 넘긴다. 규정 문서가 한국어인 한국행은 옮길
+     * 필요가 없어 아예 부르지 않는다.
+     *
+     * 못 받은 이름은 한국어로만 검색하게 되는데, 그 물품은 규정을 못 찾아 조용히 통과로 판정될
+     * 수 있다. 나중에 "왜 안 걸렸나"를 따라갈 수 있도록 경고로 남긴다.
      */
-    private String aliasOf(String itemName, CountryJurisdiction jurisdiction) {
-        return itemClassRepository.findByClassName(itemName)
-                .map(itemClass -> itemClass.aliasFor(jurisdiction.getLanguage()))
-                .orElse("");
+    private Map<String, String> translateNames(CountryJurisdiction jurisdiction, Set<ItemGroup> groups) {
+        if (!jurisdiction.needsTranslation()) {
+            return Map.of();
+        }
+        List<String> names = groups.stream().map(ItemGroup::name).distinct().toList();
+        Map<String, String> localTerms = itemTranslationClient.translate(names, jurisdiction);
+
+        List<String> missing = names.stream().filter(name -> !localTerms.containsKey(name)).toList();
+        if (!missing.isEmpty()) {
+            log.warn("[security-check] 현지어 검색어를 못 받은 물품 — 한국어로만 검색한다 country={} 물품={}",
+                    jurisdiction, missing);
+        }
+        return localTerms;
     }
 
     private List<SecurityVerdict> callClient(CountryJurisdiction jurisdiction, List<SecurityCheckTarget> targets) {
@@ -316,8 +330,8 @@ public class SecurityCheckService {
             return new ItemGroup(bagNameOf(bag), carriageType, item.getName());
         }
 
-        private SecurityCheckTarget toTarget(Long representativeItemId, String searchAlias) {
-            return new SecurityCheckTarget(representativeItemId, name, bagName, carriageType, searchAlias);
+        private SecurityCheckTarget toTarget(Long representativeItemId, String localTerms) {
+            return new SecurityCheckTarget(representativeItemId, name, bagName, carriageType, localTerms);
         }
     }
 }

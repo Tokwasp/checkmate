@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import jakarta.persistence.EntityManager;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,6 +40,7 @@ import ssafy.checkmate.domain.checklist.repository.BagItemRiskLevelRepository;
 import ssafy.checkmate.domain.checklist.repository.BagRepository;
 import ssafy.checkmate.domain.checklist.repository.RiskLevelRepository;
 import ssafy.checkmate.domain.checklist.service.AviationRegulationClient;
+import ssafy.checkmate.domain.checklist.service.ItemTranslationClient;
 import ssafy.checkmate.domain.checklist.service.SecurityCheckService;
 import ssafy.checkmate.domain.checklist.service.SecurityCheckTarget;
 import ssafy.checkmate.domain.checklist.service.SecurityVerdict;
@@ -108,6 +110,13 @@ class SecurityCheckServiceTest {
 
     @MockitoBean
     private AviationRegulationClient aviationRegulationClient;
+
+    /**
+     * 번역도 실제 GMS를 부르지 않는다. 기본은 빈 결과 — 대부분의 테스트는 검색어 조립이 아니라
+     * 판정 적용을 보므로, 번역이 필요한 테스트만 따로 스텁한다.
+     */
+    @MockitoBean
+    private ItemTranslationClient itemTranslationClient;
 
     @Test
     @DisplayName("금지·주의·통과가 섞인 물품을 검사하면 개수 3종과 물품 전체 목록을 돌려준다")
@@ -341,6 +350,87 @@ class SecurityCheckServiceTest {
         // then
         assertThat(unchecked.isDepartureChecked()).isFalse();
         assertThat(response.getItems()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("물품 이름을 여행 국가 언어로 옮겨 한국어와 함께 검색어로 싣는다")
+    void checkCarriesTranslatedTermsInSearchQuery() {
+        // given
+        Trip trip = saveTrip(MEMBER_ID, "일본");
+        Bag cabin = saveBag(trip, "기내백", CarriageType.CABIN);
+        saveItem(trip, cabin, "맥가이버칼");
+        given(itemTranslationClient.translate(any(), any()))
+                .willReturn(Map.of("맥가이버칼", "十徳ナイフ 刃物 凶器"));
+        given(aviationRegulationClient.judge(any(), any())).willReturn(List.of());
+
+        // when
+        securityCheckService.check(trip.getId(), MEMBER_ID);
+
+        // then
+        ArgumentCaptor<List<SecurityCheckTarget>> captor = ArgumentCaptor.captor();
+        verify(aviationRegulationClient).judge(any(), captor.capture());
+        assertThat(captor.getValue()).singleElement()
+                .extracting(SecurityCheckTarget::searchTerms)
+                .isEqualTo("맥가이버칼 十徳ナイフ 刃物 凶器");
+    }
+
+    @Test
+    @DisplayName("마스터에 없는 물품도 번역해 검색어에 싣는다 — 23종 밖이라고 한국어로만 찾지 않는다")
+    void checkTranslatesItemsOutsideMaster() {
+        // given
+        Trip trip = saveTrip(MEMBER_ID, "일본");
+        Bag cabin = saveBag(trip, "기내백", CarriageType.CABIN);
+        saveItem(trip, cabin, "손톱깎이");
+        given(itemTranslationClient.translate(any(), any()))
+                .willReturn(Map.of("손톱깎이", "爪切り 刃物"));
+        given(aviationRegulationClient.judge(any(), any())).willReturn(List.of());
+
+        // when
+        securityCheckService.check(trip.getId(), MEMBER_ID);
+
+        // then
+        ArgumentCaptor<List<SecurityCheckTarget>> captor = ArgumentCaptor.captor();
+        verify(aviationRegulationClient).judge(any(), captor.capture());
+        assertThat(captor.getValue()).singleElement()
+                .extracting(SecurityCheckTarget::searchTerms)
+                .isEqualTo("손톱깎이 爪切り 刃物");
+    }
+
+    @Test
+    @DisplayName("번역을 못 받으면 한국어 이름만으로 검색한다 — 검사 자체는 계속한다")
+    void checkFallsBackToKoreanOnlyWhenTranslationMissing() {
+        // given
+        Trip trip = saveTrip(MEMBER_ID, "일본");
+        Bag cabin = saveBag(trip, "기내백", CarriageType.CABIN);
+        saveItem(trip, cabin, "맥가이버칼");
+        given(itemTranslationClient.translate(any(), any())).willReturn(Map.of());
+        given(aviationRegulationClient.judge(any(), any())).willReturn(List.of());
+
+        // when
+        securityCheckService.check(trip.getId(), MEMBER_ID);
+
+        // then
+        ArgumentCaptor<List<SecurityCheckTarget>> captor = ArgumentCaptor.captor();
+        verify(aviationRegulationClient).judge(any(), captor.capture());
+        assertThat(captor.getValue()).singleElement()
+                .extracting(SecurityCheckTarget::searchTerms)
+                .isEqualTo("맥가이버칼");
+    }
+
+    @Test
+    @DisplayName("한국행은 규정 문서가 한국어라 번역을 부르지 않는다")
+    void checkSkipsTranslationForKorea() {
+        // given
+        Trip trip = saveTrip(MEMBER_ID, "대한민국");
+        Bag cabin = saveBag(trip, "기내백", CarriageType.CABIN);
+        saveItem(trip, cabin, "맥가이버칼");
+        given(aviationRegulationClient.judge(any(), any())).willReturn(List.of());
+
+        // when
+        securityCheckService.check(trip.getId(), MEMBER_ID);
+
+        // then
+        verify(itemTranslationClient, never()).translate(any(), any());
     }
 
     @Test

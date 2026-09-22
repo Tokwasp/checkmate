@@ -43,4 +43,9 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	// 실호출 수동 IT(SearchLanguageComparisonManualIT)를 켜는 스위치.
+	// 그레이들 데몬이 먼저 떠 있으면 셸 환경변수가 테스트 JVM까지 안 내려가서 명시적으로 넘긴다.
+	environment 'RAG_COMPARE', System.getenv('RAG_COMPARE') ?: 'false'
+	environment 'RAG_COMPARE_COUNTRIES', System.getenv('RAG_COMPARE_COUNTRIES') ?: ''
+	environment 'RAG_COMPARE_MODELS', System.getenv('RAG_COMPARE_MODELS') ?: ''
 }

@@ -82,7 +82,7 @@ public class GmsItemAnalysisClient implements ItemAnalysisClient {
         if (content == null || content.isBlank()) {
             throw new IllegalStateException("비전 모델 응답이 비어 있습니다.");
         }
-        AnalysisDto dto = objectMapper.readValue(stripCodeFence(content), AnalysisDto.class);
+        AnalysisDto dto = objectMapper.readValue(GmsResponses.stripCodeFence(content), AnalysisDto.class);
 
         if (!Boolean.TRUE.equals(dto.getRecognized())) {
             return Optional.empty();
@@ -94,16 +94,6 @@ public class GmsItemAnalysisClient implements ItemAnalysisClient {
         }
         return Optional.of(new ItemAnalysis(
                 dto.getName().trim(), dto.getCategory().trim(), dto.getIngredients(), textOrEmpty(dto.getState())));
-    }
-
-    /** 모델이 지시를 어기고 ```json 으로 감싸는 경우가 있어 벗겨서 파싱한다. */
-    private static String stripCodeFence(String content) {
-        String trimmed = content.trim();
-        if (trimmed.startsWith("```")) {
-            trimmed = trimmed.replaceFirst("^```[a-zA-Z]*\\n?", "");
-            trimmed = trimmed.replaceFirst("```\\s*$", "");
-        }
-        return trimmed.trim();
     }
 
     private static boolean isBlank(String value) {
