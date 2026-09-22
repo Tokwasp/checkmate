@@ -14,13 +14,18 @@ import ssafy.checkmate.domain.checklist.service.SecurityCheckTarget;
  */
 class SecurityCheckTargetTest {
 
+    /**
+     * §7·§9-5 실측 — 한국어를 더해도 검색 순위 이득이 거의 없어(§11에서 GMS 신뢰성도 고쳤으니)
+     * 현지어를 받았으면 현지어만 쓴다. 한국어는 §searchTermsFallBackToNameOnly처럼 진짜 못
+     * 받았을 때만 쓰는 안전망이다.
+     */
     @Test
-    @DisplayName("검색어는 한국어 이름 뒤에 현지어 검색어를 붙인 형태다")
-    void searchTermsCombineNameAndLocalTerms() {
+    @DisplayName("현지어를 받으면 현지어만 검색어로 쓴다 — 한국어는 안 붙인다")
+    void searchTermsUseLocalTermsOnlyWhenAvailable() {
         SecurityCheckTarget target =
                 new SecurityCheckTarget(1L, "칼", "기내백", "기내", "刃物 ナイフ 凶器");
 
-        assertThat(target.searchTerms()).isEqualTo("칼 刃物 ナイフ 凶器");
+        assertThat(target.searchTerms()).isEqualTo("刃物 ナイフ 凶器");
     }
 
     @Test

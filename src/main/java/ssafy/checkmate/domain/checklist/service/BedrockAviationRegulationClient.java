@@ -124,11 +124,16 @@ public class BedrockAviationRegulationClient implements AviationRegulationClient
      * 청크가 빠져 통과로 나왔다. 안전 기능에서 금지 물품을 놓치는 건 허용할 수 없어 검색만
      * 쪼갠다. 검색은 임베딩 1회 + 벡터 쿼리라 저렴하고, 생성(Converse)은 그대로 한 번이다.
      *
-     * 검색어에는 한국어 이름뿐 아니라 <b>그 나라 말로 옮긴 검색어</b>도 함께 싣는다
-     * ({@link SecurityCheckTarget#searchTerms()}). 규정 문서가 현지어라 한국어만으로는
+     * 검색어는 <b>현지어를 쓴다</b>(한국행은 이름이 곧 현지어). 규정 문서가 현지어라 한국어로는
      * 임베딩이 매칭하지 못해 규정을 통째로 놓친다 — 예를 들어 "가위"만으로는 일본어 코퍼스의
-     * {@code はさみ} 규정이 20위 안에 안 잡히는데, 현지어를 붙이면 2위로 올라온다.
-     * 옮기는 일은 {@link ItemTranslationClient}가 검색 직전에 한다.
+     * {@code はさみ} 규정이 20위 안에 안 잡히는데, 현지어면 잡힌다. 옮기는 일은
+     * {@link ItemTranslationClient}가 검색 직전에 한다.
+     *
+     * <b>검색어가 빈 물품은 그 물품만 건너뛴다.</b> 번역이 실패한 물품인데(§11-5) 한국어로
+     * 대체해서 검색해도 결과가 안 좋다는 게 실측으로 확인됐다
+     * (RAG_검색품질_모델선정_리포트.md §7·§9-5) — 안 되는 검색에 비용만 쓰느니 건너뛰는 게
+     * 낫다. 건너뛴 물품은 청크가 하나도 안 붙어 판정 단계에서 "근거 없음 → NONE" 규칙대로
+     * 처리된다.
      *
      * 같은 청크가 여러 물품에서 겹쳐 나오므로 본문 기준으로 중복을 제거한다.
      */
@@ -136,15 +141,27 @@ public class BedrockAviationRegulationClient implements AviationRegulationClient
         RetrievalFilter filter = filterFor(jurisdiction);
         List<String> queries = targets.stream()
                 .map(SecurityCheckTarget::searchTerms)
+                .filter(query -> !query.isBlank())
                 .distinct()
                 .toList();
+
+        List<String> skipped = targets.stream()
+                .filter(target -> target.searchTerms().isBlank())
+                .map(SecurityCheckTarget::getName)
+                .distinct()
+                .toList();
+        if (!skipped.isEmpty()) {
+            log.warn("[security-check] 검색어가 없어 검색을 건너뛴 물품 — 근거 없이 통과로 판정될 수 있다 물품={}",
+                    skipped);
+        }
 
         long startedAt = System.nanoTime();
         Set<String> chunks = new LinkedHashSet<>();
         queries.forEach(query -> chunks.addAll(retrieveFor(query, filter)));
 
-        log.info("[security-check] 규정 검색 완료 jurisdiction={} 물품={}종 청크={}건(중복 제거 후) 소요={}ms",
-                jurisdiction, queries.size(), chunks.size(), elapsedMillisSince(startedAt));
+        log.info("[security-check] 규정 검색 완료 jurisdiction={} 물품={}종(검색 {}종) 청크={}건(중복 제거 후) 소요={}ms",
+                jurisdiction, targets.stream().map(SecurityCheckTarget::getName).distinct().count(),
+                queries.size(), chunks.size(), elapsedMillisSince(startedAt));
 
         return String.join("\n\n---\n\n", chunks);
     }

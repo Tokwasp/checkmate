@@ -8,6 +8,9 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import jakarta.persistence.EntityManager;
 import java.time.LocalDate;
 import java.util.List;
@@ -16,6 +19,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
@@ -375,7 +379,7 @@ class SecurityCheckServiceTest {
     }
 
     @Test
-    @DisplayName("물품 이름을 여행 국가 언어로 옮겨 한국어와 함께 검색어로 싣는다")
+    @DisplayName("물품 이름을 여행 국가 언어로 옮겨 현지어를 검색어로 싣는다 — 한국어는 안 붙인다")
     void checkCarriesTranslatedTermsInSearchQuery() {
         // given
         Trip trip = saveTrip(MEMBER_ID, "일본");
@@ -393,7 +397,7 @@ class SecurityCheckServiceTest {
         verify(aviationRegulationClient).judge(any(), captor.capture());
         assertThat(captor.getValue()).singleElement()
                 .extracting(SecurityCheckTarget::searchTerms)
-                .isEqualTo("맥가이버칼 十徳ナイフ 刃物 凶器");
+                .isEqualTo("十徳ナイフ 刃物 凶器");
     }
 
     @Test
@@ -415,12 +419,17 @@ class SecurityCheckServiceTest {
         verify(aviationRegulationClient).judge(any(), captor.capture());
         assertThat(captor.getValue()).singleElement()
                 .extracting(SecurityCheckTarget::searchTerms)
-                .isEqualTo("손톱깎이 爪切り 刃物");
+                .isEqualTo("爪切り 刃物");
     }
 
+    /**
+     * §11-5 — 번역 실패를 한국어로 대체하지 않는다. 한국어로 검색해도 결과가 안 좋다는 게
+     * 실측(§7·§9-5)으로 확인됐고, GMS 실패 원인 자체도 §11에서 고쳤다. 검색어가 비면
+     * {@link BedrockAviationRegulationClient}가 그 물품만 건너뛴다(검사 자체는 계속).
+     */
     @Test
-    @DisplayName("번역을 못 받으면 한국어 이름만으로 검색한다 — 검사 자체는 계속한다")
-    void checkFallsBackToKoreanOnlyWhenTranslationMissing() {
+    @DisplayName("번역을 못 받으면 검색어를 비워 그 물품만 검색을 건너뛴다 — 한국어로 대체하지 않는다")
+    void checkLeavesSearchTermsEmptyWhenTranslationMissing() {
         // given
         Trip trip = saveTrip(MEMBER_ID, "일본");
         Bag cabin = saveBag(trip, "기내백", CarriageType.CABIN);
@@ -436,7 +445,73 @@ class SecurityCheckServiceTest {
         verify(aviationRegulationClient).judge(any(), captor.capture());
         assertThat(captor.getValue()).singleElement()
                 .extracting(SecurityCheckTarget::searchTerms)
-                .isEqualTo("맥가이버칼");
+                .isEqualTo("");
+    }
+
+    /**
+     * [gms-translation-fail] 마커는 CloudWatch Logs 지표 필터의 매칭 대상이다 — 문구가
+     * 바뀌면 알람이 조용히 깨지므로 로그 포맷 자체를 회귀 테스트로 고정해 둔다
+     * (RAG_검색품질_모델선정_리포트.md §8-4·§9-4).
+     */
+    @Test
+    @DisplayName("번역을 못 받으면 [gms-translation-fail] 마커로 ERROR 로그를 남긴다")
+    void checkLogsTranslationFailMarkerWhenTranslationMissing() {
+        // given
+        Trip trip = saveTrip(MEMBER_ID, "일본");
+        Bag cabin = saveBag(trip, "기내백", CarriageType.CABIN);
+        saveItem(trip, cabin, "맥가이버칼");
+        given(itemTranslationClient.translate(any(), any())).willReturn(Map.of());
+        given(aviationRegulationClient.judge(any(), any())).willReturn(List.of());
+
+        Logger logger = (Logger) LoggerFactory.getLogger(SecurityCheckService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+
+        // when
+        try {
+            securityCheckService.check(trip.getId(), MEMBER_ID);
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        // then
+        assertThat(appender.list)
+                .extracting(ILoggingEvent::getFormattedMessage)
+                .anySatisfy(message -> assertThat(message)
+                        .contains("[gms-translation-fail]")
+                        .contains("country=JP")
+                        .contains("missingCount=1")
+                        .contains("totalCount=1"));
+    }
+
+    @Test
+    @DisplayName("번역을 정상적으로 받으면 [gms-translation-fail] 로그를 남기지 않는다")
+    void checkDoesNotLogTranslationFailMarkerWhenTranslationSucceeds() {
+        // given
+        Trip trip = saveTrip(MEMBER_ID, "일본");
+        Bag cabin = saveBag(trip, "기내백", CarriageType.CABIN);
+        saveItem(trip, cabin, "맥가이버칼");
+        given(itemTranslationClient.translate(any(), any()))
+                .willReturn(Map.of("맥가이버칼", "十徳ナイフ 刃物 凶器"));
+        given(aviationRegulationClient.judge(any(), any())).willReturn(List.of());
+
+        Logger logger = (Logger) LoggerFactory.getLogger(SecurityCheckService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+
+        // when
+        try {
+            securityCheckService.check(trip.getId(), MEMBER_ID);
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        // then
+        assertThat(appender.list)
+                .extracting(ILoggingEvent::getFormattedMessage)
+                .noneMatch(message -> message.contains("[gms-translation-fail]"));
     }
 
     @Test
@@ -453,6 +528,27 @@ class SecurityCheckServiceTest {
 
         // then
         verify(itemTranslationClient, never()).translate(any(), any());
+    }
+
+    /** KR은 번역을 안 부르지만, 검색어가 비지 않고 한국어 이름 그대로 나가야 한다(§11-5). */
+    @Test
+    @DisplayName("한국행은 번역 없이 한국어 이름 그대로를 검색어로 쓴다")
+    void checkUsesKoreanNameAsSearchTermsForKorea() {
+        // given
+        Trip trip = saveTrip(MEMBER_ID, "대한민국");
+        Bag cabin = saveBag(trip, "기내백", CarriageType.CABIN);
+        saveItem(trip, cabin, "맥가이버칼");
+        given(aviationRegulationClient.judge(any(), any())).willReturn(List.of());
+
+        // when
+        securityCheckService.check(trip.getId(), MEMBER_ID);
+
+        // then
+        ArgumentCaptor<List<SecurityCheckTarget>> captor = ArgumentCaptor.captor();
+        verify(aviationRegulationClient).judge(any(), captor.capture());
+        assertThat(captor.getValue()).singleElement()
+                .extracting(SecurityCheckTarget::searchTerms)
+                .isEqualTo("맥가이버칼");
     }
 
     @Test

@@ -1,9 +1,12 @@
 package ssafy.checkmate.domain.checklist.service;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -13,6 +16,7 @@ import ssafy.checkmate.global.config.GmsProperties;
  * SSAFY GMS 게이트웨이 호출. OpenAI 호환 /chat/completions 엔드포인트로 가정한다
  * (docs.md §7-15-1 — 실제 스펙 확인 전까지의 임시 가정).
  */
+@Slf4j
 @Component
 public class GmsClient {
 
@@ -24,9 +28,29 @@ public class GmsClient {
         this.model = properties.model();
     }
 
-    /** systemPrompt/userPrompt로 채팅을 요청하고, 첫 번째 응답 메시지의 본문(content)을 반환한다. */
+    /**
+     * systemPrompt/userPrompt로 채팅을 요청하고, 첫 번째 응답 메시지의 본문(content)을 반환한다.
+     * {@code max_tokens}를 안 보낸다 — 게이트웨이 기본값에 맡긴다. 응답이 길어질 수 있는
+     * 호출(물품이 많거나 답이 긴 경우)은 {@link #chat(String, String, int)}를 써서 명시적으로
+     * 상한을 잡을 것. 안 그러면 게이트웨이 기본 상한에서 JSON이 중간에 잘려 파싱이 실패한다
+     * ({@link GmsItemTranslationClient}에서 실제로 재현됨 — tools.jackson의
+     * {@code UnexpectedEndOfInputException}).
+     */
     public String chat(String systemPrompt, String userPrompt) {
-        ChatCompletionRequest request = new ChatCompletionRequest(model, List.of(
+        return chat(systemPrompt, userPrompt, null);
+    }
+
+    /**
+     * {@code maxTokens}로 응답 상한을 명시한다. 모델이 상한에 걸려 끊기면({@code finish_reason=length})
+     * 파싱 실패로 이어지기 전에 경고 로그를 남긴다 — 상한이 부족했다는 신호와 실제 파싱 예외를
+     * 구분하기 위해서다.
+     */
+    public String chat(String systemPrompt, String userPrompt, int maxTokens) {
+        return chat(systemPrompt, userPrompt, (Integer) maxTokens);
+    }
+
+    private String chat(String systemPrompt, String userPrompt, Integer maxTokens) {
+        ChatCompletionRequest request = new ChatCompletionRequest(model, maxTokens, List.of(
                 new ChatMessage("system", systemPrompt),
                 new ChatMessage("user", userPrompt)));
 
@@ -41,7 +65,11 @@ public class GmsClient {
         if (response == null || response.getChoices() == null || response.getChoices().isEmpty()) {
             throw new GmsResponseEmptyException();
         }
-        return response.getChoices().get(0).getMessage().getContent();
+        ChatCompletionResponse.Choice choice = response.getChoices().get(0);
+        if ("length".equals(choice.getFinishReason())) {
+            log.warn("[gms] 응답이 max_tokens={}에서 잘렸다(finish_reason=length) — 파싱이 실패할 수 있다", maxTokens);
+        }
+        return choice.getMessage().getContent();
     }
 
     public static class GmsResponseEmptyException extends RuntimeException {
@@ -50,14 +78,20 @@ public class GmsClient {
         }
     }
 
+    /** {@code maxTokens}가 null이면 필드 자체를 생략한다 — 기존 호출부의 요청 형태를 그대로 유지하기 위해서다. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     private static class ChatCompletionRequest {
         @Getter
         private final String model;
         @Getter
+        @JsonProperty("max_tokens")
+        private final Integer maxTokens;
+        @Getter
         private final List<ChatMessage> messages;
 
-        private ChatCompletionRequest(String model, List<ChatMessage> messages) {
+        private ChatCompletionRequest(String model, Integer maxTokens, List<ChatMessage> messages) {
             this.model = model;
+            this.maxTokens = maxTokens;
             this.messages = messages;
         }
     }
@@ -85,6 +119,8 @@ public class GmsClient {
         @NoArgsConstructor
         static class Choice {
             private ResponseMessage message;
+            @JsonProperty("finish_reason")
+            private String finishReason;
         }
 
         @Getter

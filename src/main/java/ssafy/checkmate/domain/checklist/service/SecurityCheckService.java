@@ -146,7 +146,7 @@ public class SecurityCheckService {
         Map<String, String> localTerms = translateNames(jurisdiction, groups.keySet());
         List<SecurityCheckTarget> targets = groups.entrySet().stream()
                 .map(entry -> entry.getKey().toTarget(representativeIdOf(entry.getValue()),
-                        localTerms.getOrDefault(entry.getKey().name(), "")))
+                        searchTermFor(jurisdiction, entry.getKey().name(), localTerms)))
                 .toList();
 
         List<SecurityVerdict> verdicts = callClient(jurisdiction, targets);
@@ -186,14 +186,36 @@ public class SecurityCheckService {
     }
 
     /**
+     * 그 물품의 검색어를 정한다. 한국행은 규정 문서가 한국어라 이름 자체가 검색어다(GMS를
+     * 부르지도 않는다). 그 외 나라는 GMS 번역 결과만 쓴다 — <b>번역을 못 받았다고 한국어로
+     * 대체하지 않는다.</b> 원래는 한국어로 대체했는데, 그렇게 검색해도 결과가 안 좋다는 게
+     * 실측으로 확인됐다(RAG_검색품질_모델선정_리포트.md §7·§9-5 — JP·TW 일부 물품은 한국어
+     * 질의로 정답 청크를 top-15 안에서 아예 못 찾음). 안 좋은 검색을 굳이 태워 비용만 쓰느니
+     * 빈 문자열을 주는 게 낫다 — 검색이 아예 빠지면 {@link BedrockAviationRegulationClient}가
+     * 건너뛰고, 판정은 "근거 없음 → NONE" 규칙대로 나온다(못 찾았을 때의 실제 결과와 같다).
+     * 실패 자체는 {@link #translateNames} 의 <b>[gms-translation-fail]</b> 로그로 남는다.
+     */
+    private String searchTermFor(CountryJurisdiction jurisdiction, String name, Map<String, String> localTerms) {
+        if (!jurisdiction.needsTranslation()) {
+            return name;
+        }
+        return localTerms.getOrDefault(name, "");
+    }
+
+    /**
      * 물품 이름을 그 나라 말 검색어로 옮긴다. 규정 문서가 현지어라 한국어 이름만으로는 임베딩이
-     * 매칭하지 못해 규정을 통째로 놓친다 — 질의에 현지어를 함께 실어야 검색이 걸린다.
+     * 매칭하지 못해 규정을 통째로 놓친다 — 질의에 현지어가 있어야 검색이 걸린다.
      *
      * 이름마다 부르지 않고 묶음 이름 전체를 한 번에 넘긴다. 규정 문서가 한국어인 한국행은 옮길
      * 필요가 없어 아예 부르지 않는다.
      *
-     * 못 받은 이름은 한국어로만 검색하게 되는데, 그 물품은 규정을 못 찾아 조용히 통과로 판정될
-     * 수 있다. 나중에 "왜 안 걸렸나"를 따라갈 수 있도록 경고로 남긴다.
+     * 못 받은 이름은 검색 자체가 빠지는데(§searchTermFor), 그 물품은 규정을 못 찾아 조용히
+     * 통과로 판정될 수 있다 — 검사 자체는 계속한다(안전 기능 전체를 멈추면 안 되므로). 그
+     * 대신 이 조용한 성능저하가 운영에서 안 보이고 지나가지 않도록 <b>[gms-translation-fail]</b>
+     * 마커로 ERROR 로그를 남긴다. CloudWatch Logs에서 이 마커 문자열로 지표 필터(Metric
+     * Filter)를 만들면 발생 빈도(또는 {@code missingCount} 합계)에 알람을 걸 수 있다 — 예:
+     * 필터 패턴 {@code "[gms-translation-fail]"}, 지표 이름 {@code SecurityCheckGmsTranslationFail}.
+     * 실측 결과·근거는 RAG_검색품질_모델선정_리포트.md §8-3·§8-4 참고.
      */
     private Map<String, String> translateNames(CountryJurisdiction jurisdiction, Set<ItemGroup> groups) {
         if (!jurisdiction.needsTranslation()) {
@@ -204,8 +226,9 @@ public class SecurityCheckService {
 
         List<String> missing = names.stream().filter(name -> !localTerms.containsKey(name)).toList();
         if (!missing.isEmpty()) {
-            log.warn("[security-check] 현지어 검색어를 못 받은 물품 — 한국어로만 검색한다 country={} 물품={}",
-                    jurisdiction, missing);
+            log.error(
+                    "[security-check][gms-translation-fail] country={} missingCount={} totalCount={} missingItems={}",
+                    jurisdiction, missing.size(), names.size(), missing);
         }
         return localTerms;
     }

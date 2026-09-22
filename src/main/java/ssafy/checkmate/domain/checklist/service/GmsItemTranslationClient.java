@@ -29,6 +29,19 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class GmsItemTranslationClient implements ItemTranslationClient {
 
+    /**
+     * 물품 하나당 넉넉히 잡는 여유분(토큰) — 실측으로 원인을 찾은 값이다.
+     *
+     * {@code max_tokens}를 안 보내던 시절엔 게이트웨이 기본 상한에 맡겼는데, 물품이 많은
+     * 요청(23종 전체를 한 번에 옮길 때)에서 응답이 중간에 잘려 JSON 파싱이 실패하는 걸
+     * 실측으로 재현했다({@code GmsFailureDiagnosisManualIT}, 태국어 23종 요청에서
+     * {@code UnexpectedEndOfInputException} 재현). 물품 하나의 답은 분류 용어 2~4개 낱말
+     * (지시사항)인데, 실제로는 그보다 긴 스크립트(태국어·일본어)와 JSON 이스케이프까지
+     * 고려해 넉넉히 잡는다.
+     */
+    private static final int TOKENS_PER_ITEM = 80;
+    private static final int MIN_TOKENS = 300;
+
     /** 같은 패키지의 테스트가 실제로 나가는 문구를 그대로 확인한다. */
     static final String SYSTEM_PROMPT = """
             당신은 각 나라의 항공 보안 규정 문서를 찾기 위한 검색어를 만드는 전문가입니다.
@@ -80,7 +93,13 @@ public class GmsItemTranslationClient implements ItemTranslationClient {
      *
      * 현지어가 빠진 물품은 규정을 못 찾은 채 통과로 판정되므로 일시적인 오류로 포기하지 않는다.
      * 그렇다고 검사 자체를 실패시키지도 않는다 — GMS 장애가 안전 기능 전체를 멈추게 된다.
-     * 빈 결과일 때 한국어로만 검색하게 되는 건 부르는 쪽이 경고로 남긴다.
+     *
+     * 재시도까지 실패하면 <b>[gms-call-fail]</b> 마커로 ERROR 로그를 남긴다 — GMS 호출 자체가
+     * (네트워크·파싱 등으로) 실패한 저수준 원인을 가리킨다. 빈 결과를 받은 호출 쪽
+     * ({@link SecurityCheckService#translateNames})이 어떤 물품이 한국어로만 검색되는지를
+     * 별도 마커(<b>[gms-translation-fail]</b>)로 다시 남기므로, 두 마커를 CloudWatch Logs에서
+     * 각각 지표화하면 "GMS가 아예 안 됐다"와 "일부 물품만 못 받았다"를 구분해서 알람을 걸 수
+     * 있다.
      */
     private Map<String, String> askOnceMore(List<String> itemNames, CountryJurisdiction jurisdiction) {
         try {
@@ -91,13 +110,20 @@ public class GmsItemTranslationClient implements ItemTranslationClient {
         try {
             return ask(itemNames, jurisdiction);
         } catch (RuntimeException second) {
-            log.error("[security-check] 번역 재시도까지 실패 — 한국어로만 검색한다 country={}", jurisdiction, second);
+            log.error("[security-check][gms-call-fail] country={} itemCount={} attempts=2 — 한국어로만 검색한다",
+                    jurisdiction, itemNames.size(), second);
             return Map.of();
         }
     }
 
     private Map<String, String> ask(List<String> itemNames, CountryJurisdiction jurisdiction) {
-        return parse(gmsClient.chat(SYSTEM_PROMPT, userPrompt(itemNames, jurisdiction)), itemNames);
+        String content = gmsClient.chat(
+                SYSTEM_PROMPT, userPrompt(itemNames, jurisdiction), maxTokensFor(itemNames));
+        return parse(content, itemNames);
+    }
+
+    private static int maxTokensFor(List<String> itemNames) {
+        return Math.max(MIN_TOKENS, itemNames.size() * TOKENS_PER_ITEM);
     }
 
     static String userPrompt(List<String> itemNames, CountryJurisdiction jurisdiction) {
