@@ -15,6 +15,15 @@ public class TripDetailResponse {
     private final String region;
     private final LocalDate startDate;
     private final LocalDate endDate;
+    /**
+     * 목적지 좌표·목적·항공편 유무 (2026-09-22 추가). 여행 수정(PUT)이 생성과 같은 전체 본문을 요구하는데,
+     * 앱이 이 값들을 알 길이 없어 목적지를 다시 고르지 않으면 "목적지를 목록에서 다시 골라 주세요" 가 떴다.
+     * 상세에 실어 주면 앱이 바꾸지 않은 값을 그대로 되돌려 보낼 수 있다.
+     */
+    private final Double latitude;
+    private final Double longitude;
+    private final List<String> purposes;
+    private final boolean hasFlight;
     private final String departureAirline;
     /** 귀국(입국) 항공사. 항공편 없는 여행은 null. */
     private final String arrivalAirline;
@@ -33,6 +42,7 @@ public class TripDetailResponse {
     private final List<TripBagResponse> bags;
 
     private TripDetailResponse(TripType tripType, String country, String region, LocalDate startDate, LocalDate endDate,
+                                Double latitude, Double longitude, List<String> purposes, boolean hasFlight,
                                 String departureAirline, String arrivalAirline, String coverImageUrl,
                                 int currentStep, int totalStep, String currentStepName,
                                 int totalItemCount, int recognizedItemCount, int leftBehindCount,
@@ -42,6 +52,10 @@ public class TripDetailResponse {
         this.region = region;
         this.startDate = startDate;
         this.endDate = endDate;
+        this.latitude = latitude;
+        this.longitude = longitude;
+        this.purposes = purposes;
+        this.hasFlight = hasFlight;
         this.departureAirline = departureAirline;
         this.arrivalAirline = arrivalAirline;
         this.coverImageUrl = coverImageUrl;
@@ -58,7 +72,8 @@ public class TripDetailResponse {
                                          int leftBehindCount, List<TripBagResponse> bags) {
         TripStep step = trip.getCurrentStep();
         return new TripDetailResponse(trip.getType(today), trip.getCountry(), trip.getRegion(), trip.getStartDate(),
-                trip.getEndDate(), trip.getDepartureAirline(), trip.getArrivalAirline(), trip.getCoverImageUrl(),
+                trip.getEndDate(), trip.getLatitude(), trip.getLongitude(), trip.getPurposes(), trip.isHasFlight(),
+                trip.getDepartureAirline(), trip.getArrivalAirline(), trip.getCoverImageUrl(),
                 step.getOrder(), TripStep.totalStepCount(), step.getDisplayName(),
                 totalItemCount, recognizedItemCount, leftBehindCount, bags);
     }
