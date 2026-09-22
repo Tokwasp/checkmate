@@ -150,7 +150,15 @@ public class BagItem extends BaseEntity {
      * 담김 여부(departureChecked)는 건드리지 않는다 — 두 시점은 서로 독립이다.
      */
     public void checkReturn() {
-        this.returnChecked = true;
+        changeReturnChecked(true);
+    }
+
+    /**
+     * 귀가 전 점검 단건 체크·해제(33-2번). 사용자가 손으로 켜고 끈다.
+     * 카메라(33번)가 켠 것도 같은 컬럼이라 이 메서드로 그대로 풀린다 — 체크 수단은 저장하지 않는다.
+     */
+    public void changeReturnChecked(boolean returnChecked) {
+        this.returnChecked = returnChecked;
     }
 
     /**

@@ -1,7 +1,9 @@
 package ssafy.checkmate.domain.checklist;
 
+import static ssafy.checkmate.domain.checklist.TestRequestFactory.returnCheckItemCheckRequest;
 import static ssafy.checkmate.domain.checklist.TestRequestFactory.returnCheckScanRequest;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -33,7 +35,7 @@ import ssafy.checkmate.global.auth.JwtTokenProvider;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * 카메라로 확인(32·33번) 엔드포인트 테스트 — HTTP 계약만 본다.
+ * 카메라로 확인(32·33·33-2번) 엔드포인트 테스트 — HTTP 계약만 본다.
  * 목록을 가르고 이름을 찾는 규칙은 {@code ReturnCheckScanServiceTest}의 몫이다.
  */
 @SpringBootTest
@@ -230,6 +232,122 @@ class ReturnCheckScanControllerTest {
                 .andDo(print())
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message").value("존재하지 않는 여행입니다."));
+    }
+
+    @Test
+    @DisplayName("손으로 체크하면 남은 개수와 그 줄을 응답한다")
+    void checkItem() throws Exception {
+        Trip trip = createTrip(MEMBER_ID);
+        Bag carrier = createBag(trip, "캐리어", CarriageType.CHECKED);
+        BagItem passport = createUncheckedItem(trip, carrier, "여권");
+        createUncheckedItem(trip, carrier, "선글라스");
+
+        mockMvc.perform(patch("/api/v1/trips/{tripId}/return-check/items/{itemId}", trip.getId(), passport.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(MEMBER_ID))
+                        .content(objectMapper.writeValueAsString(returnCheckItemCheckRequest(true)))
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value(200))
+                .andExpect(jsonPath("$.data.uncheckedCount").value(1))
+                .andExpect(jsonPath("$.data.item.itemId").value(passport.getId()))
+                .andExpect(jsonPath("$.data.item.name").value("여권"))
+                .andExpect(jsonPath("$.data.item.returnChecked").value(true))
+                .andExpect(jsonPath("$.data.item.bagName").value("캐리어"));
+    }
+
+    @Test
+    @DisplayName("손으로 해제하면 그 줄이 returnChecked false로 돌아온다")
+    void uncheckItem() throws Exception {
+        Trip trip = createTrip(MEMBER_ID);
+        Bag carrier = createBag(trip, "캐리어", CarriageType.CHECKED);
+        BagItem passport = createCheckedItem(trip, carrier, "여권", null);
+
+        mockMvc.perform(patch("/api/v1/trips/{tripId}/return-check/items/{itemId}", trip.getId(), passport.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(MEMBER_ID))
+                        .content(objectMapper.writeValueAsString(returnCheckItemCheckRequest(false)))
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.uncheckedCount").value(1))
+                .andExpect(jsonPath("$.data.item.returnChecked").value(false));
+    }
+
+    @Test
+    @DisplayName("체크 여부 없이 요청하면 400을 응답한다")
+    void checkItemWithoutReturnChecked() throws Exception {
+        Trip trip = createTrip(MEMBER_ID);
+        Bag carrier = createBag(trip, "캐리어", CarriageType.CHECKED);
+        BagItem passport = createUncheckedItem(trip, carrier, "여권");
+
+        mockMvc.perform(patch("/api/v1/trips/{tripId}/return-check/items/{itemId}", trip.getId(), passport.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(MEMBER_ID))
+                        .content(objectMapper.writeValueAsString(returnCheckItemCheckRequest(null)))
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("체크 여부는 필수입니다."));
+    }
+
+    @Test
+    @DisplayName("담지 않은 물품을 체크하면 400을 응답한다")
+    void checkItemNotPacked() throws Exception {
+        Trip trip = createTrip(MEMBER_ID);
+        Bag carrier = createBag(trip, "캐리어", CarriageType.CHECKED);
+        BagItem unpacked = bagItemRepository.saveAndFlush(
+                BagItem.create(trip.getId(), MEMBER_ID, "우산", "기타", 1, carrier.getId()));
+
+        mockMvc.perform(patch("/api/v1/trips/{tripId}/return-check/items/{itemId}", trip.getId(), unpacked.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(MEMBER_ID))
+                        .content(objectMapper.writeValueAsString(returnCheckItemCheckRequest(true)))
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("점검 대상 물품이 아닙니다."));
+    }
+
+    @Test
+    @DisplayName("체크 대상이 없는 물품이면 404를 응답한다")
+    void checkItemMissingItem() throws Exception {
+        Trip trip = createTrip(MEMBER_ID);
+
+        mockMvc.perform(patch("/api/v1/trips/{tripId}/return-check/items/{itemId}", trip.getId(), 999_999L)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(MEMBER_ID))
+                        .content(objectMapper.writeValueAsString(returnCheckItemCheckRequest(true)))
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("존재하지 않는 물품입니다."));
+    }
+
+    @Test
+    @DisplayName("손으로 체크할 때 토큰이 없으면 401을 응답한다")
+    void checkItemWithoutToken() throws Exception {
+        Trip trip = createTrip(MEMBER_ID);
+        Bag carrier = createBag(trip, "캐리어", CarriageType.CHECKED);
+        BagItem passport = createUncheckedItem(trip, carrier, "여권");
+
+        mockMvc.perform(patch("/api/v1/trips/{tripId}/return-check/items/{itemId}", trip.getId(), passport.getId())
+                        .content(objectMapper.writeValueAsString(returnCheckItemCheckRequest(true)))
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("손으로 체크할 때 본인 여행이 아니면 403을 응답한다")
+    void checkItemOtherMembersTrip() throws Exception {
+        Trip trip = createTrip(MEMBER_ID);
+        Bag carrier = createBag(trip, "캐리어", CarriageType.CHECKED);
+        BagItem passport = createUncheckedItem(trip, carrier, "여권");
+
+        mockMvc.perform(patch("/api/v1/trips/{tripId}/return-check/items/{itemId}", trip.getId(), passport.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(OTHER_MEMBER_ID))
+                        .content(objectMapper.writeValueAsString(returnCheckItemCheckRequest(true)))
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andDo(print())
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("본인의 여행만 수정할 수 있습니다."));
     }
 
     private Trip createTrip(Long memberId) {

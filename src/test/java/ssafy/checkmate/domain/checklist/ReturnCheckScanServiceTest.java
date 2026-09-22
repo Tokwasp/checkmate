@@ -13,14 +13,19 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
+import ssafy.checkmate.domain.checklist.dto.request.ReturnCheckItemCheckRequest;
 import ssafy.checkmate.domain.checklist.dto.request.ReturnCheckScanRequest;
 import ssafy.checkmate.domain.checklist.dto.response.ReturnCheckFoundItemResponse;
+import ssafy.checkmate.domain.checklist.dto.response.ReturnCheckItemCheckResponse;
 import ssafy.checkmate.domain.checklist.dto.response.ReturnCheckItemsResponse;
 import ssafy.checkmate.domain.checklist.dto.response.ReturnCheckMissingItemResponse;
 import ssafy.checkmate.domain.checklist.dto.response.ReturnCheckScanResponse;
 import ssafy.checkmate.domain.checklist.entity.Bag;
 import ssafy.checkmate.domain.checklist.entity.BagItem;
 import ssafy.checkmate.domain.checklist.entity.CarriageType;
+import ssafy.checkmate.domain.checklist.exception.BagItemAccessDeniedException;
+import ssafy.checkmate.domain.checklist.exception.BagItemNotFoundException;
+import ssafy.checkmate.domain.checklist.exception.NotReturnCheckTargetException;
 import ssafy.checkmate.domain.checklist.repository.BagItemRepository;
 import ssafy.checkmate.domain.checklist.repository.BagRepository;
 import ssafy.checkmate.domain.checklist.service.ReturnCheckService;
@@ -30,7 +35,7 @@ import ssafy.checkmate.domain.trip.exception.TripNotFoundException;
 import ssafy.checkmate.domain.trip.repository.TripRepository;
 
 /**
- * 카메라로 확인(32·33번) 서비스 테스트.
+ * 카메라로 확인(32·33·33-2번) 서비스 테스트.
  *
  * 31번(가방별 점검 목록)은 {@code ReturnCheckServiceTest}가 따로 본다 — 한 클래스에
  * 20개 넘게 쌓이면 읽기 어렵다.
@@ -447,6 +452,191 @@ class ReturnCheckScanServiceTest {
         assertThatThrownBy(() -> returnCheckService.scan(trip.getId(), OTHER_MEMBER_ID, scanRequest("여권")))
                 .isInstanceOf(TripAccessDeniedException.class)
                 .hasMessage("본인의 여행만 수정할 수 있습니다.");
+    }
+
+    /* ── 33-2. 손으로 체크·해제 ────────────────────────── */
+
+    @Test
+    @DisplayName("미확인 물품을 체크하면 남은 개수가 하나 줄고 그 줄을 돌려준다")
+    void checkItem() {
+        // given
+        Trip trip = saveTrip(MEMBER_ID);
+        Bag carrier = saveBag(trip, "캐리어", CarriageType.CHECKED);
+        BagItem passport = saveUncheckedItem(trip, carrier, "여권");
+        saveUncheckedItem(trip, carrier, "선글라스");
+
+        // when
+        ReturnCheckItemCheckResponse response =
+                returnCheckService.checkItem(trip.getId(), MEMBER_ID, passport.getId(), checkRequest(true));
+
+        // then
+        assertThat(response.getUncheckedCount()).isEqualTo(1);
+        assertThat(response.getItem())
+                .extracting(ReturnCheckFoundItemResponse::getItemId, ReturnCheckFoundItemResponse::getName,
+                        ReturnCheckFoundItemResponse::isReturnChecked, ReturnCheckFoundItemResponse::getBagName)
+                .containsExactly(passport.getId(), "여권", true, "캐리어");
+        assertThat(bagItemRepository.findById(passport.getId()).orElseThrow().isReturnChecked()).isTrue();
+    }
+
+    @Test
+    @DisplayName("체크된 물품을 해제하면 다시 안 보임으로 돌아간다")
+    void uncheckItem() {
+        // given
+        Trip trip = saveTrip(MEMBER_ID);
+        Bag carrier = saveBag(trip, "캐리어", CarriageType.CHECKED);
+        BagItem passport = saveCheckedItem(trip, carrier, "여권", null, LocalDateTime.of(2026, 9, 20, 10, 0));
+
+        // when
+        ReturnCheckItemCheckResponse response =
+                returnCheckService.checkItem(trip.getId(), MEMBER_ID, passport.getId(), checkRequest(false));
+
+        // then
+        assertThat(response.getUncheckedCount()).isEqualTo(1);
+        assertThat(response.getItem().isReturnChecked()).isFalse();
+        assertThat(bagItemRepository.findById(passport.getId()).orElseThrow().isReturnChecked()).isFalse();
+    }
+
+    @Test
+    @DisplayName("카메라가 체크한 줄도 그대로 해제된다 — 체크 수단을 가리지 않는다")
+    void uncheckItemCheckedByCamera() {
+        // given
+        Trip trip = saveTrip(MEMBER_ID);
+        Bag carrier = saveBag(trip, "캐리어", CarriageType.CHECKED);
+        BagItem umbrella = saveUncheckedItem(trip, carrier, "우산");
+        returnCheckService.scan(trip.getId(), MEMBER_ID, scanRequest("우산"));
+
+        // when
+        ReturnCheckItemCheckResponse response =
+                returnCheckService.checkItem(trip.getId(), MEMBER_ID, umbrella.getId(), checkRequest(false));
+
+        // then
+        assertThat(response.getItem().isReturnChecked()).isFalse();
+        assertThat(bagItemRepository.findById(umbrella.getId()).orElseThrow().isReturnChecked()).isFalse();
+    }
+
+    @Test
+    @DisplayName("같은 값을 두 번 보내도 결과가 같다 — 33번과 달리 멱등이다")
+    void checkItemIsIdempotent() {
+        // given
+        Trip trip = saveTrip(MEMBER_ID);
+        Bag carrier = saveBag(trip, "캐리어", CarriageType.CHECKED);
+        BagItem passport = saveUncheckedItem(trip, carrier, "여권");
+        saveUncheckedItem(trip, carrier, "선글라스");
+
+        // when
+        returnCheckService.checkItem(trip.getId(), MEMBER_ID, passport.getId(), checkRequest(true));
+        ReturnCheckItemCheckResponse second =
+                returnCheckService.checkItem(trip.getId(), MEMBER_ID, passport.getId(), checkRequest(true));
+
+        // then
+        assertThat(second.getUncheckedCount()).isEqualTo(1);
+        assertThat(second.getItem().isReturnChecked()).isTrue();
+    }
+
+    @Test
+    @DisplayName("체크해도 담김 여부(departureChecked)는 건드리지 않는다")
+    void checkItemKeepsDepartureChecked() {
+        // given
+        Trip trip = saveTrip(MEMBER_ID);
+        Bag carrier = saveBag(trip, "캐리어", CarriageType.CHECKED);
+        BagItem passport = saveUncheckedItem(trip, carrier, "여권");
+
+        // when
+        returnCheckService.checkItem(trip.getId(), MEMBER_ID, passport.getId(), checkRequest(true));
+
+        // then
+        assertThat(bagItemRepository.findById(passport.getId()).orElseThrow().isDepartureChecked()).isTrue();
+    }
+
+    @Test
+    @DisplayName("담지 않은 물품은 점검 대상이 아니라 400으로 거절한다")
+    void checkItemRejectsUnpackedItem() {
+        // given
+        Trip trip = saveTrip(MEMBER_ID);
+        Bag carrier = saveBag(trip, "캐리어", CarriageType.CHECKED);
+        BagItem unpacked = saveUnpackedItem(trip, carrier, "우산");
+
+        // when // then
+        assertThatThrownBy(() ->
+                returnCheckService.checkItem(trip.getId(), MEMBER_ID, unpacked.getId(), checkRequest(true)))
+                .isInstanceOf(NotReturnCheckTargetException.class)
+                .hasMessage("점검 대상 물품이 아닙니다.");
+        assertThat(bagItemRepository.findById(unpacked.getId()).orElseThrow().isReturnChecked()).isFalse();
+    }
+
+    @Test
+    @DisplayName("다른 여행의 물품이면 404로 거절한다")
+    void checkItemFromOtherTrip() {
+        // given
+        Trip trip = saveTrip(MEMBER_ID);
+        Trip otherTrip = saveTrip(MEMBER_ID);
+        BagItem otherItem =
+                saveUncheckedItem(otherTrip, saveBag(otherTrip, "캐리어", CarriageType.CHECKED), "수영복");
+
+        // when // then
+        assertThatThrownBy(() ->
+                returnCheckService.checkItem(trip.getId(), MEMBER_ID, otherItem.getId(), checkRequest(true)))
+                .isInstanceOf(BagItemNotFoundException.class)
+                .hasMessage("존재하지 않는 물품입니다.");
+    }
+
+    @Test
+    @DisplayName("남의 물품이면 403으로 거절한다")
+    void checkItemOfOtherMember() {
+        // given — 여행은 내 것인데 물품 주인만 남인 상태(정상 흐름으로는 나오지 않는다)
+        Trip trip = saveTrip(MEMBER_ID);
+        Bag carrier = saveBag(trip, "캐리어", CarriageType.CHECKED);
+        BagItem item = BagItem.create(trip.getId(), OTHER_MEMBER_ID, "여권", "기타", 1, carrier.getId());
+        item.packInto(carrier.getId(), null, "기타");
+        BagItem saved = bagItemRepository.saveAndFlush(item);
+
+        // when // then
+        assertThatThrownBy(() ->
+                returnCheckService.checkItem(trip.getId(), MEMBER_ID, saved.getId(), checkRequest(true)))
+                .isInstanceOf(BagItemAccessDeniedException.class)
+                .hasMessage("본인의 물품만 수정할 수 있습니다.");
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 물품이면 404로 거절한다")
+    void checkItemMissingItem() {
+        // given
+        Trip trip = saveTrip(MEMBER_ID);
+
+        // when // then
+        assertThatThrownBy(() ->
+                returnCheckService.checkItem(trip.getId(), MEMBER_ID, 999_999L, checkRequest(true)))
+                .isInstanceOf(BagItemNotFoundException.class)
+                .hasMessage("존재하지 않는 물품입니다.");
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 여행이면 404로 거절한다")
+    void checkItemMissingTrip() {
+        // when // then
+        assertThatThrownBy(() ->
+                returnCheckService.checkItem(999_999L, MEMBER_ID, 1L, checkRequest(true)))
+                .isInstanceOf(TripNotFoundException.class)
+                .hasMessage("존재하지 않는 여행입니다.");
+    }
+
+    @Test
+    @DisplayName("본인 여행이 아니면 403으로 거절한다")
+    void checkItemOtherMembersTrip() {
+        // given
+        Trip trip = saveTrip(MEMBER_ID);
+        Bag carrier = saveBag(trip, "캐리어", CarriageType.CHECKED);
+        BagItem passport = saveUncheckedItem(trip, carrier, "여권");
+
+        // when // then
+        assertThatThrownBy(() ->
+                returnCheckService.checkItem(trip.getId(), OTHER_MEMBER_ID, passport.getId(), checkRequest(true)))
+                .isInstanceOf(TripAccessDeniedException.class)
+                .hasMessage("본인의 여행만 수정할 수 있습니다.");
+    }
+
+    private ReturnCheckItemCheckRequest checkRequest(Boolean returnChecked) {
+        return TestRequestFactory.returnCheckItemCheckRequest(returnChecked);
     }
 
     private ReturnCheckScanRequest scanRequest(String name) {
