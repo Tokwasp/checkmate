@@ -51,6 +51,16 @@ import ssafy.checkmate.global.config.BedrockProperties;
  * 검색 필터에는 국가 코드와 함께 {@code GLOBAL}을 넣는다. IATA 리튬배터리 지침처럼 모든
  * 국가에 공통으로 적용되는 문서가 거기 있어서, 국가 코드만 걸면 보조배터리 판정에서 통째로
  * 빠지기 때문이다.
+ *
+ * <b>Cohere Rerank는 쓰지 않는다.</b> top-{@code numberOfResults} 벡터 검색 결과를 그대로
+ * 넘긴다 — top-30→10으로 줄여서 시도해봤지만, 배치(여행 전체를 한 판정으로 묶는) 구조라
+ * rerank 요금이 아낀 토큰값과 비슷해 비용 절감이 거의 없었다. 도입/제거 과정과 실측은
+ * RAG_검색품질_모델선정_리포트.md 참고.
+ *
+ * 판정은 물품이 실제로 담긴 가방을 LLM에게 알려주지 않고, 기내(cabin)·위탁(checked) 각각의
+ * 판정을 따로 받은 뒤 <b>서버 코드가</b> 실제 가방에 맞춰 최종 등급 하나로 접는다. 가방
+ * 정보와 최종 등급 계산을 한 번에 LLM에게 맡기면 같은 물품·같은 규정인데도 판정이 오가는
+ * 흔들림이 있었다(RAG_검색품질_모델선정_리포트.md 3·4·5번).
  */
 @Slf4j
 @Component
@@ -60,9 +70,18 @@ public class BedrockAviationRegulationClient implements AviationRegulationClient
     private static final String SCOPE_ATTRIBUTE = "scope";
     private static final String SCOPE_VALUE = "avsec";
     private static final String JURISDICTIONS_ATTRIBUTE = "jurisdictions";
-    private static final String TOOL_NAME = "report_verdicts";
-    /** 묶음 하나당 60~80토큰으로 보고 잡는 여유분. 응답이 잘리면 파싱 자체가 실패한다. */
-    private static final int TOKENS_PER_TARGET = 80;
+    private static final String TOOL_NAME = "report_carriage_verdicts";
+    private static final String CABIN = "기내";
+    private static final String CHECKED = "위탁";
+    /** ALLOWED/NO_EVIDENCE보다 CONDITIONAL이, CONDITIONAL보다 PROHIBITED가 더 엄격하다. */
+    private static final List<String> CARRIAGE_STRICTNESS =
+            List.of("ALLOWED", "NO_EVIDENCE", "CONDITIONAL", "PROHIBITED");
+    /**
+     * 묶음 하나당 잡는 토큰 여유분. cabin/checked 등급과 안내 문구 두 벌을 받으므로 예전
+     * 3분류(80토큰) 대비 넉넉히 잡는다 — 실측(PromptSchemaFullScaleManualIT, 230쌍)에서
+     * 물품 하나에 최대 334토큰까지 나왔다. 응답이 잘리면 파싱 자체가 실패한다.
+     */
+    private static final int TOKENS_PER_TARGET = 200;
     /**
      * 반입 판정은 분류 작업이라 다양성이 이득이 아니라 노이즈다. 같은 여행을 두 번 검사했는데
      * 판정이 "금지"에서 "통과"로 바뀌면 안전 기능으로서 신뢰를 잃는다.
@@ -75,31 +94,26 @@ public class BedrockAviationRegulationClient implements AviationRegulationClient
     /** 같은 패키지의 프롬프트 덤프 테스트가 실제로 나가는 문구를 그대로 확인한다. */
     static final String SYSTEM_PROMPT = """
             당신은 항공 보안 검색 규정을 안내하는 전문가입니다.
-            주어진 규정 발췌문만 근거로 삼아, 물품 목록의 각 줄이 반입 가능한지 판정하세요.
+            주어진 규정 발췌문만 근거로 삼아, 물품 목록의 각 물품을 기내 휴대(cabin)와 위탁 수하물(checked)로
+            각각 판정하세요. 여행자가 그 물품을 어느 가방에 넣었는지는 고려하지 마세요.
 
-            판정 기준 (물품이 실제로 담긴 가방 구분을 기준으로 판정할 것)
-            - VIOLATION: 그 가방에 넣으면 반입이 불가한 물품.
-              예) 기내 가방의 칼, 위탁 가방의 보조배터리.
-            - WARNING: 반입 자체는 되지만 조건(용량·개수·포장 등)을 지켜야 하는 물품.
-            - NONE: 제한 없이 반입 가능한 물품.
-
-            판정과 guide는 반드시 일치해야 합니다. guide에 "반입이 불가"라고 쓸 거라면
-            판정은 WARNING이 아니라 VIOLATION입니다.
+            값
+            - ALLOWED: 제한 없이 가능.
+            - CONDITIONAL: 발췌문에 명시된 조건(용량·길이·개수·포장·항공사 승인 등)을 지켜야 가능.
+            - PROHIBITED: 불가.
+            - NO_EVIDENCE: 발췌문에 그 물품이나 그 분류에 대한 근거가 없음. 추측으로 ALLOWED를 쓰지 마세요.
 
             반드시 지킬 것
-            - 물품 목록의 모든 줄을 빠짐없이 판정하세요. NONE인 줄도 절대 생략하지 마세요.
-            - 각 줄의 itemId를 그대로 돌려주세요. 새로 만들거나 번호를 다시 매기지 마세요.
-            - carriageType이 "미지정"이면 기내와 위탁 어느 쪽인지 알 수 없으므로,
-              둘 다 고려해 더 보수적인 쪽으로 판정하세요.
-            - 규정 발췌문에 근거가 없으면 NONE으로 두세요. 추측하지 마세요.
+            - 물품 목록의 모든 줄을 빠짐없이 판정하고, 각 줄의 itemId를 그대로 돌려주세요.
+            - 조건은 발췌문에 명시된 제한만 해당합니다. 일반적인 권고나 검색 절차(꺼내서 검사받기 등)는 조건이
+              아닙니다 — 그런 것만 있으면 ALLOWED입니다.
+            - 판정과 안내가 일치해야 합니다. 안내에 "불가"라고 쓸 거라면 그 칸은 PROHIBITED입니다.
 
-            guide 작성 규칙
-            - NONE이면 guide를 비우세요.
-            - VIOLATION/WARNING이면 규정 원문을 그대로 옮기지 말고 다시 쓰세요.
-              ① 왜 걸렸는지(기준·수치를 포함) → ② 어떻게 하면 되는지(조치 방법) 순서로,
-              한국어 "~해요" 말투의 1~2문장으로 씁니다.
-              예) "날 길이가 6cm를 넘는 도검류는 기내 반입이 불가해요. 위탁 수하물로 옮기면 반입할 수 있어요."
-            - 조치할 방법이 없으면 한 문장으로 끝내세요.
+            안내 작성 규칙 (cabinGuide, checkedGuide)
+            - 그 칸이 ALLOWED나 NO_EVIDENCE면 비우세요.
+            - CONDITIONAL·PROHIBITED면 ① 왜 걸리는지(기준·수치 포함) → ② 어떻게 하면 되는지 순서로,
+              한국어 "~해요" 말투의 1~2문장으로 쓰세요. 다른 가방으로 옮기면 해결되면 그렇게 안내하세요.
+              예) cabinGuide: "날 길이가 6cm를 넘는 칼은 기내 반입이 불가해요. 위탁 수하물로 옮기면 반입할 수 있어요."
             - 조문 번호·출처 표기·긴 해설은 넣지 마세요.
             """;
 
@@ -230,17 +244,17 @@ public class BedrockAviationRegulationClient implements AviationRegulationClient
             log.warn("[security-check] 응답이 토큰 상한에서 잘렸다 — 뒤쪽 묶음은 판정이 빠질 수 있다 묶음={}건", targets.size());
         }
 
-        return parseVerdicts(response);
+        return parseVerdicts(response, targets);
     }
 
     private static long elapsedMillisSince(long startedAtNanos) {
         return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos);
     }
 
+    /** 가방 정보를 주지 않는다 — LLM은 기내/위탁 사실만 판정하고, 가방에 맞춘 최종 등급은 코드가 고른다. */
     String userPrompt(String regulations, List<SecurityCheckTarget> targets) {
         String itemLines = targets.stream()
-                .map(target -> "- itemId=%d | 물품=%s | 가방=%s | 구분=%s".formatted(
-                        target.getItemId(), target.getName(), target.getBagName(), target.getCarriageType()))
+                .map(target -> "- itemId=%d | 물품=%s".formatted(target.getItemId(), target.getName()))
                 .collect(Collectors.joining("\n"));
 
         return """
@@ -257,6 +271,8 @@ public class BedrockAviationRegulationClient implements AviationRegulationClient
     }
 
     private ToolConfiguration verdictToolConfig() {
+        List<Document> carriageValues = List.of(Document.fromString("ALLOWED"), Document.fromString("CONDITIONAL"),
+                Document.fromString("PROHIBITED"), Document.fromString("NO_EVIDENCE"));
         Document verdictItem = Document.mapBuilder()
                 .putString("type", "object")
                 .putDocument("properties", Document.mapBuilder()
@@ -264,17 +280,27 @@ public class BedrockAviationRegulationClient implements AviationRegulationClient
                                 .putString("type", "integer")
                                 .putString("description", "물품 목록에 적힌 itemId를 그대로 적는다")
                                 .build())
-                        .putDocument("level", Document.mapBuilder()
+                        .putDocument("cabin", Document.mapBuilder()
                                 .putString("type", "string")
-                                .putList("enum", List.of(Document.fromString("NONE"),
-                                        Document.fromString("WARNING"), Document.fromString("VIOLATION")))
+                                .putList("enum", carriageValues)
+                                .putString("description", "기내 휴대 판정")
                                 .build())
-                        .putDocument("guide", Document.mapBuilder()
+                        .putDocument("checked", Document.mapBuilder()
                                 .putString("type", "string")
-                                .putString("description", "NONE이면 비운다. 그 외에는 사유와 조치 방법을 담은 1~2문장")
+                                .putList("enum", carriageValues)
+                                .putString("description", "위탁 수하물 판정")
+                                .build())
+                        .putDocument("cabinGuide", Document.mapBuilder()
+                                .putString("type", "string")
+                                .putString("description", "기내에 넣을 때의 안내. ALLOWED·NO_EVIDENCE면 비운다")
+                                .build())
+                        .putDocument("checkedGuide", Document.mapBuilder()
+                                .putString("type", "string")
+                                .putString("description", "위탁에 넣을 때의 안내. ALLOWED·NO_EVIDENCE면 비운다")
                                 .build())
                         .build())
-                .putList("required", List.of(Document.fromString("itemId"), Document.fromString("level")))
+                .putList("required", List.of(Document.fromString("itemId"), Document.fromString("cabin"),
+                        Document.fromString("checked")))
                 .build();
 
         Document schema = Document.mapBuilder()
@@ -291,14 +317,19 @@ public class BedrockAviationRegulationClient implements AviationRegulationClient
         return ToolConfiguration.builder()
                 .tools(Tool.fromToolSpec(ToolSpecification.builder()
                         .name(TOOL_NAME)
-                        .description("물품 목록의 모든 줄에 대한 반입 판정을 보고한다")
+                        .description("물품마다 기내·위탁 반입 판정을 보고한다")
                         .inputSchema(ToolInputSchema.fromJson(schema))
                         .build()))
                 .toolChoice(ToolChoice.fromTool(SpecificToolChoice.builder().name(TOOL_NAME).build()))
                 .build();
     }
 
-    private List<SecurityVerdict> parseVerdicts(ConverseResponse response) {
+    /**
+     * LLM이 물품마다 돌려준 cabin/checked 판정을, 그 물품이 실제로 담긴 가방
+     * ({@link SecurityCheckTarget#getCarriageType()})에 맞춰 최종 등급 하나로 접는다.
+     * 가방이 "미지정"이면 둘 중 더 엄격한 쪽을 쓴다({@link #CARRIAGE_STRICTNESS}).
+     */
+    private List<SecurityVerdict> parseVerdicts(ConverseResponse response, List<SecurityCheckTarget> targets) {
         ToolUseBlock toolUse = response.output().message().content().stream()
                 .map(ContentBlock::toolUse)
                 .filter(Objects::nonNull)
@@ -308,22 +339,74 @@ public class BedrockAviationRegulationClient implements AviationRegulationClient
                     return new IllegalStateException("판정 응답 형식이 올바르지 않습니다.");
                 });
 
+        Map<Long, SecurityCheckTarget> targetsByItemId = targets.stream()
+                .collect(Collectors.toMap(SecurityCheckTarget::getItemId, target -> target, (a, b) -> a));
+
         List<Document> rawVerdicts = toolUse.input().asMap().get("verdicts").asList();
         List<SecurityVerdict> verdicts = new ArrayList<>();
-        rawVerdicts.forEach(raw -> toVerdict(raw).ifPresent(verdicts::add));
+        rawVerdicts.forEach(raw -> toVerdict(raw, targetsByItemId).ifPresent(verdicts::add));
         return verdicts;
     }
 
-    /** 모델이 모르는 level을 적었거나 itemId가 숫자가 아니면 그 줄만 버린다 — 나머지는 살린다. */
-    private Optional<SecurityVerdict> toVerdict(Document raw) {
+    /** 모델이 모르는 값을 적었거나 itemId를 찾을 수 없으면 그 줄만 버린다 — 나머지는 살린다. */
+    private Optional<SecurityVerdict> toVerdict(Document raw, Map<Long, SecurityCheckTarget> targetsByItemId) {
         Map<String, Document> fields = raw.asMap();
-        Optional<VerdictLevel> level = VerdictLevel.from(textOf(fields.get("level")));
-        if (level.isEmpty() || fields.get("itemId") == null) {
+        String cabin = textOf(fields.get("cabin"));
+        String checked = textOf(fields.get("checked"));
+        if (fields.get("itemId") == null || !CARRIAGE_STRICTNESS.contains(cabin) || !CARRIAGE_STRICTNESS.contains(checked)) {
             log.warn("[security-check] 해석할 수 없는 판정 줄 — 무시한다 raw={}", raw);
             return Optional.empty();
         }
-        return Optional.of(new SecurityVerdict(
-                fields.get("itemId").asNumber().longValue(), level.get(), textOf(fields.get("guide"))));
+
+        long itemId = fields.get("itemId").asNumber().longValue();
+        SecurityCheckTarget target = targetsByItemId.get(itemId);
+        if (target == null) {
+            log.warn("[security-check] 물품 목록에 없는 itemId — 무시한다 itemId={}", itemId);
+            return Optional.empty();
+        }
+
+        String cabinGuide = textOf(fields.get("cabinGuide"));
+        String checkedGuide = textOf(fields.get("checkedGuide"));
+        String resolvedCarriage = resolveCarriage(target.getCarriageType(), cabin, checked);
+        String carriageValue = CABIN.equals(resolvedCarriage) ? cabin : checked;
+        VerdictLevel level = toVerdictLevel(carriageValue);
+        String guide = level == VerdictLevel.NONE ? null
+                : guideFor(resolvedCarriage, cabin, checked, cabinGuide, checkedGuide);
+        return Optional.of(new SecurityVerdict(itemId, level, guide));
+    }
+
+    /** carriageType이 "미지정"이면 cabin/checked 중 더 엄격한 쪽을 실제 가방으로 취급한다. */
+    private String resolveCarriage(String carriageType, String cabin, String checked) {
+        if (CABIN.equals(carriageType) || CHECKED.equals(carriageType)) {
+            return carriageType;
+        }
+        return CARRIAGE_STRICTNESS.indexOf(cabin) >= CARRIAGE_STRICTNESS.indexOf(checked) ? CABIN : CHECKED;
+    }
+
+    private VerdictLevel toVerdictLevel(String carriageValue) {
+        return switch (carriageValue) {
+            case "PROHIBITED" -> VerdictLevel.VIOLATION;
+            case "CONDITIONAL" -> VerdictLevel.WARNING;
+            default -> VerdictLevel.NONE; // ALLOWED, NO_EVIDENCE
+        };
+    }
+
+    /**
+     * 실제(또는 미지정이면 더 엄격한 쪽으로 정한) 가방 쪽 안내를 기본으로 쓰고, 다른 가방이었다면
+     * 등급이 달라진다는 점을 한 줄 덧붙인다(예: 칼을 위탁에 넣으면 "" + "기내 가방으로는 옮기지 마세요").
+     */
+    private String guideFor(String resolvedCarriage, String cabin, String checked, String cabinGuide, String checkedGuide) {
+        boolean cabinSide = CABIN.equals(resolvedCarriage);
+        String ownValue = cabinSide ? cabin : checked;
+        String otherValue = cabinSide ? checked : cabin;
+        String own = cabinSide ? cabinGuide : checkedGuide;
+        String other = cabinSide ? checkedGuide : cabinGuide;
+        if (ownValue.equals(otherValue) || other == null || other.isBlank()) {
+            return own;
+        }
+        String otherBag = cabinSide ? "위탁 수하물" : "기내 가방";
+        String prefix = own == null || own.isBlank() ? "지금 가방에 넣었다면 문제없어요. " : own + " ";
+        return prefix + "(%s에 넣을 경우) %s".formatted(otherBag, other);
     }
 
     private String textOf(Document document) {
