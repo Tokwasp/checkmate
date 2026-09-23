@@ -76,9 +76,14 @@ public class MemberItemService {
         for (PackedNameCount p : packed) {
             MemberItem existing = master.get(p.getName());
             if (existing == null) {
-                missing.add(MemberItem.fromPacked(memberId, p.getName(), p.getCategory()));
+                MemberItem created = MemberItem.fromPacked(memberId, p.getName(), p.getCategory());
+                created.fillImageIfEmpty(inventoryImageByName.get(p.getName()));
+                missing.add(created);
             } else {
                 existing.fillCategoryIfEmpty(p.getCategory());
+                // 인벤토리 누끼를 마스터에 옮겨 둔다 (2026-09-23) — 여행을 지우면 BagItem 이 함께 사라져
+                // 사진이 통째로 없어졌다("자주 담은 물건 사진 없음"). S3 파일은 남으므로 URL 만 보존하면 된다.
+                existing.fillImageIfEmpty(inventoryImageByName.get(p.getName()));
             }
         }
         if (!missing.isEmpty()) {
