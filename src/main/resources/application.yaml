@@ -63,3 +63,12 @@ bedrock:
   # 물품 이름 하나당 가져올 청크 수(물품별로 따로 검색한다)
   number-of-results: ${BEDROCK_SEARCH_RESULTS:15}
   max-tokens: ${BEDROCK_MAX_TOKENS:4000}
+  # 촬영 물품 반입 판정(35번)의 품목 질의만 넓게 검색해 리랭크로 거른다. 과태료 질의·항공 규정은 위 number-of-results 그대로.
+  # 골든셋 40종에서 판정은 같고 입력 토큰은 약 38% 줄었다. 리랭크 모델(Cohere Rerank 3.5)은 도쿄 리전에만 있다.
+  quarantine-rerank:
+    enabled: ${BEDROCK_QUARANTINE_RERANK_ENABLED:true}
+    region: ${BEDROCK_RERANK_REGION:ap-northeast-1}
+    model-arn: ${BEDROCK_RERANK_MODEL_ARN:arn:aws:bedrock:ap-northeast-1::foundation-model/cohere.rerank-v3-5:0}
+    candidate-pool: ${BEDROCK_QUARANTINE_RERANK_POOL:50}
+    top-n: ${BEDROCK_QUARANTINE_RERANK_TOP:5}
+    min-score: ${BEDROCK_QUARANTINE_RERANK_MIN_SCORE:0.25}

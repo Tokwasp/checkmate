@@ -73,9 +73,16 @@ public class BedrockQuarantineRegulationClient implements QuarantineRegulationCl
 
             반드시 지킬 것
             - 원재료 중 하나라도 검역 대상이면 가장 엄격한 쪽으로 판정하세요.
-            - 이 판정은 여행자가 직접 들고 오는 휴대품만 다룹니다. 검역증명서는 수입업자가 사전에
-              발급받는 통관 서류이므로 휴대품에는 없는 것으로 보세요. "검역증명서가 있으면 가능하다"를
-              이유로 PROHIBITED를 RESTRICTED로 낮추지 마세요.
+            - 이 판정은 여행자가 직접 들고 오는 휴대품만 다룹니다. 검역증명서·식물검역증은 수출국 정부가
+              발급하는 통관 서류이므로 휴대품에는 없는 것으로 보세요. "검역증명서(식물검역증)가 있으면
+              가능하다"를 이유로 PROHIBITED를 RESTRICTED로 낮추지 마세요.
+              단, 식물검역증이 필요한 것은 종자·묘목·구근 등 심는 용도의 식물뿐입니다. 절화(꽃다발) 등
+              그 밖의 식물류는 신고 후 검역을 받으면 되므로, 수입금지 대상이 아니면 RESTRICTED로 판정하세요.
+            - 의약품·건강기능식품의 "요건확인대상"은 반입 금지가 아니라 별도 확인(의사 소견서 등)을 거치면
+              들여올 수 있다는 뜻입니다. PROHIBITED가 아니라 RESTRICTED로 판정하고 필요한 절차를 action에
+              안내하세요.
+            - 생과실·신선 채소 규정은 생것에만 적용하세요. 완전히 건조했거나 가열·당절임 등으로 가공한
+              과일·채소 제품(말린 과일, 잼 등)에는 적용하지 마세요.
             - 사진으로는 원산지·수량을 알 수 없습니다. 모르는 조건을 가정하지 말고, 여행자가 스스로
               맞출 수 있는 조건(수량·용량·금액 한도 등)에 따라 결과가 갈리면 RESTRICTED로 두고 조건을
               안내하세요. 예) 술 2L 한도, 의약품 수량 한도.
@@ -83,9 +90,12 @@ public class BedrockQuarantineRegulationClient implements QuarantineRegulationCl
               과태료를 부과한다는 표·조문이 있으면, 그것이 곧 "휴대품으로는 반입할 수 없다"는 근거입니다
               (휴대품에는 검역증명서가 없으므로). 이때는 PROHIBITED로 판정하고 그 표의 금액을 penalty에
               범위로 적으세요. "검역대에서 확인하면 된다"로 끝내지 마세요.
+              단, 이 규칙은 과태료 표가 다루는 대상에 이 물품이 실제로 해당할 때만 쓰세요. 예를 들어
+              "동물의 생산물(축산물)" 과태료 표는 식물성 원료만으로 만든 가공식품이나 김·미역 같은 해조류에
+              적용하지 마세요.
             - 규정 발췌문에 근거가 없을 때는 분류로 가르세요. 여기서 "근거가 없다"는 것은 그 물품·분류에
-              관한 규정이 발췌문에 하나도 없는 경우를 말합니다. 과태료 표나 검역 절차만 있어도 근거는
-              있는 것이므로 아래 분류 규칙을 쓰지 마세요.
+              관한 규정이 발췌문에 하나도 없는 경우를 말합니다. 이 물품이 해당하지 않는 과태료 표나 일반
+              검역 절차만 있다면 근거가 없는 것으로 보고 아래 분류 규칙을 따르세요.
               · 육류 가공품·유제품·수산물·신선 과일·채소·식물·종자·흙·야생동식물 제품이면 ALLOWED가 아니라
                 RESTRICTED로 두고 "검역대에서 확인하세요"라고 안내하세요.
               · 그 밖의 분류(일반 공산품 등)는 ALLOWED로 두세요.
@@ -117,6 +127,7 @@ public class BedrockQuarantineRegulationClient implements QuarantineRegulationCl
     private final BedrockAgentRuntimeClient bedrockAgentRuntimeClient;
     private final BedrockRuntimeClient bedrockRuntimeClient;
     private final BedrockProperties properties;
+    private final QuarantineReranker reranker;
 
     @Override
     public QuarantineVerdict judge(ItemAnalysis item) {
@@ -131,18 +142,37 @@ public class BedrockQuarantineRegulationClient implements QuarantineRegulationCl
      * ② 걸렸을 때의 과태료·신고 방법 — 과태료 금액은 <b>부과기준 문서</b>(가축전염병 예방법 시행령
      * 별표 3)에 있는데, 품목 질의만으로는 그 문서가 상위에 오르지 않을 수 있다. 그러면 판정문에서
      * 과태료가 빠진다.
+     *
+     * 품목 질의만 넓게 받아 리랭크한다({@link QuarantineReranker}). 과태료 질의는 리랭크하지 않는다 —
+     * 육류·유제품의 금지 근거인 "검역증명서 미첨부 과태료" 청크가 벡터 12~13위에 있어 좁히면 빠진다.
      */
     String retrieveRegulations(ItemAnalysis item) {
         RetrievalFilter filter = importFilter();
-        List<String> queries = List.of(itemQuery(item), penaltyQuery(item));
 
         long startedAt = System.nanoTime();
-        Set<String> chunks = new LinkedHashSet<>();
-        queries.forEach(query -> chunks.addAll(retrieveFor(query, filter)));
+        Set<String> chunks = new LinkedHashSet<>(itemChunks(itemQuery(item), filter));
+        chunks.addAll(retrieveFor(penaltyQuery(item), filter, properties.numberOfResults()));
 
-        log.info("[quarantine-check] 규정 검색 완료 질의={}건 청크={}건(중복 제거 후) 소요={}ms",
-                queries.size(), chunks.size(), elapsedMillisSince(startedAt));
+        log.info("[quarantine-check] 규정 검색 완료 청크={}건(중복 제거 후) 리랭크={} 소요={}ms",
+                chunks.size(), reranker.isEnabled(), elapsedMillisSince(startedAt));
         return String.join("\n\n---\n\n", chunks);
+    }
+
+    /** 리랭크가 실패하면 판정을 멈추지 않고 기존 방식(벡터 상위 number-of-results개)으로 돌아간다. */
+    private List<String> itemChunks(String query, RetrievalFilter filter) {
+        if (!reranker.isEnabled()) {
+            return retrieveFor(query, filter, properties.numberOfResults());
+        }
+        List<String> candidates = retrieveFor(query, filter, reranker.candidatePool());
+        try {
+            List<String> reranked = reranker.rerank(query, candidates);
+            log.info("[quarantine-check] 품목 질의 리랭크 후보={}건 채택={}건", candidates.size(), reranked.size());
+            return reranked;
+        } catch (RuntimeException e) {
+            log.warn("[quarantine-check] 리랭크 실패 — 벡터 상위 {}건으로 대신한다 원인={}",
+                    properties.numberOfResults(), e.getMessage());
+            return candidates.stream().limit(properties.numberOfResults()).toList();
+        }
     }
 
     static String itemQuery(ItemAnalysis item) {
@@ -154,13 +184,13 @@ public class BedrockQuarantineRegulationClient implements QuarantineRegulationCl
         return "%s 휴대 반입 과태료 부과기준 자진 신고".formatted(item.category());
     }
 
-    private List<String> retrieveFor(String query, RetrievalFilter filter) {
+    private List<String> retrieveFor(String query, RetrievalFilter filter, int numberOfResults) {
         RetrieveResponse response = bedrockAgentRuntimeClient.retrieve(RetrieveRequest.builder()
                 .knowledgeBaseId(properties.knowledgeBaseId())
                 .retrievalQuery(KnowledgeBaseQuery.builder().text(query).build())
                 .retrievalConfiguration(KnowledgeBaseRetrievalConfiguration.builder()
                         .vectorSearchConfiguration(KnowledgeBaseVectorSearchConfiguration.builder()
-                                .numberOfResults(properties.numberOfResults())
+                                .numberOfResults(numberOfResults)
                                 .filter(filter)
                                 .build())
                         .build())

@@ -29,7 +29,7 @@ import ssafy.checkmate.domain.checklist.entity.CountryJurisdiction;
  * {@code ./gradlew test --tests "*SecurityCheckPromptDumpManualIT"}
  * (다른 ManualIT와 같이 {@code test} 프로필을 쓰지 않으므로 .env에 BEDROCK_KB_ID 등이 필요하다)
  */
-@Disabled("실제 Bedrock 검색 호출 — 프롬프트를 확인할 때만 주석 해제")
+@Disabled("실호출·과금 테스트 — 자동으로 돌지 않게 막아 둔다. 돌려야 하면 이 줄을 지우고 로컬에서만 실행")
 @SpringBootTest
 class SecurityCheckPromptDumpManualIT {
 

@@ -31,3 +31,5 @@ bedrock:
   model-id: test-model
   number-of-results: 12
   max-tokens: 4000
+  quarantine-rerank:
+    enabled: false

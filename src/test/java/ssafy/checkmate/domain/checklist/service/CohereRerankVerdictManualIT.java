@@ -12,7 +12,6 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import software.amazon.awssdk.core.document.Document;
@@ -60,8 +59,7 @@ import ssafy.checkmate.global.config.BedrockProperties;
  *        --tests "ssafy.checkmate.domain.checklist.service.CohereRerankVerdictManualIT"}
  * 결과는 나라 하나가 끝날 때마다 {@code build/cohere-rerank-verdict.md}에 덮어써 남는다.
  */
-@Disabled("실호출·과금 테스트 — 돌릴 때만 이 줄을 지우고 RERANK_VERDICT=true로 실행")
-@EnabledIfEnvironmentVariable(named = "RERANK_VERDICT", matches = "true")
+@Disabled("실호출·과금 테스트 — 자동으로 돌지 않게 막아 둔다. 돌려야 하면 이 줄을 지우고 로컬에서만 실행")
 @SpringBootTest
 class CohereRerankVerdictManualIT {
 
@@ -134,7 +132,6 @@ class CohereRerankVerdictManualIT {
      * 실행: {@code RERANK_DIAG=true ./gradlew test --rerun --tests "...CohereRerankVerdictManualIT.diagnose"}
      */
     @Test
-    @EnabledIfEnvironmentVariable(named = "RERANK_DIAG", matches = "true")
     @DisplayName("의심 판정 쌍을 기존 방식과 Cohere 방식으로 나란히 판정한다")
     void diagnose() throws Exception {
         Map<CountryJurisdiction, List<String>> cases = new java.util.LinkedHashMap<>();
@@ -181,7 +178,6 @@ class CohereRerankVerdictManualIT {
      * 실행: {@code RERANK_VERDICT=true RERANK_TOP30=true ./gradlew test --rerun --tests "...CohereRerankVerdictManualIT.top30VsCohere"}
      */
     @Test
-    @EnabledIfEnvironmentVariable(named = "RERANK_TOP30", matches = "true")
     @DisplayName("리랭크 없음(top-30 그대로) vs Cohere top-10 — 같은 검색 결과로 18쌍 판정")
     void top30VsCohere() throws Exception {
         Map<CountryJurisdiction, List<String>> cases = new java.util.LinkedHashMap<>();

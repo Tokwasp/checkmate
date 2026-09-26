@@ -25,7 +25,7 @@ import ssafy.checkmate.domain.checklist.service.VerdictLevel;
  * 실행: 아래 @Disabled를 지우고
  *   ./gradlew test --tests "ssafy.checkmate.domain.checklist.AviationRegulationClientManualIT"
  */
-@Disabled("실제 Bedrock 호출 — 로컬에서 수동 확인할 때만 주석 해제")
+@Disabled("실호출·과금 테스트 — 자동으로 돌지 않게 막아 둔다. 돌려야 하면 이 줄을 지우고 로컬에서만 실행")
 @SpringBootTest
 class AviationRegulationClientManualIT {
 

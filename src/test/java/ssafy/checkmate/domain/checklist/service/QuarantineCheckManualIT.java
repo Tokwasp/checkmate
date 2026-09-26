@@ -9,9 +9,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.mock.web.MockMultipartFile;
@@ -39,11 +39,11 @@ import ssafy.checkmate.domain.member.repository.MemberRepository;
  *
  * 결과는 표준 출력에 {@code [MANUAL]} 접두사로 찍힌다(build/test-results의 XML 또는 IDE 콘솔).
  */
+@Disabled("실호출·과금 테스트 — 자동으로 돌지 않게 막아 둔다. 돌려야 하면 이 줄을 지우고 로컬에서만 실행")
 @SpringBootTest
 class QuarantineCheckManualIT {
 
     private static final String IMAGE_DIR_ENV = "QUARANTINE_IMAGE_DIR";
-    private static final String BEDROCK_ENV = "QUARANTINE_BEDROCK";
 
     @Autowired
     private GmsVisionClient gmsVisionClient;
@@ -58,7 +58,6 @@ class QuarantineCheckManualIT {
     private MemberRepository memberRepository;
 
     @Test
-    @EnabledIfEnvironmentVariable(named = IMAGE_DIR_ENV, matches = ".+")
     @DisplayName("첫 번째 사진의 GMS 원본 응답 — JSON만 오는지, 코드펜스·설명이 섞이는지 확인한다")
     void rawGmsResponse() throws IOException {
         Path first = images().get(0);
@@ -74,7 +73,6 @@ class QuarantineCheckManualIT {
     }
 
     @Test
-    @EnabledIfEnvironmentVariable(named = IMAGE_DIR_ENV, matches = ".+")
     @DisplayName("폴더의 사진마다 물품 분석(1단계)을 실제로 호출해 품목·분류·원재료·상태를 확인한다")
     void analyzeImages() throws IOException {
         for (Path path : images()) {
@@ -89,8 +87,6 @@ class QuarantineCheckManualIT {
     }
 
     @Test
-    @EnabledIfEnvironmentVariable(named = IMAGE_DIR_ENV, matches = ".+")
-    @EnabledIfEnvironmentVariable(named = BEDROCK_ENV, matches = "true")
     @DisplayName("폴더의 사진마다 전체 흐름(분석 → 규정 검색 → 판정)을 실제로 호출한다")
     void checkEndToEnd() throws IOException {
         Long memberId = memberRepository.save(Member.builder()

@@ -34,6 +34,7 @@ import software.amazon.awssdk.services.bedrockruntime.model.TokenUsage;
 import software.amazon.awssdk.services.bedrockruntime.model.ToolUseBlock;
 import ssafy.checkmate.domain.regulation.entity.RegulationLevel;
 import ssafy.checkmate.global.config.BedrockProperties;
+import ssafy.checkmate.global.config.QuarantineRerankProperties;
 
 /**
  * 한국 반입 규정 검색·판정(35번 2·3단계) 테스트. 실제 Bedrock 대신 SDK 클라이언트를 모킹한다 —
@@ -44,6 +45,8 @@ class BedrockQuarantineRegulationClientTest {
 
     private static final ItemAnalysis JERKY =
             new ItemAnalysis("육포", "육류 가공품", List.of("돼지고기", "소고기"), "건조 가공");
+    private static final BedrockProperties PROPERTIES =
+            new BedrockProperties("ap-northeast-2", "kb-1", "model-x", 12, 4000);
 
     @Mock
     private BedrockAgentRuntimeClient agentClient;
@@ -53,10 +56,56 @@ class BedrockQuarantineRegulationClientTest {
 
     private BedrockQuarantineRegulationClient client;
 
+    @Mock
+    private QuarantineReranker reranker;
+
     @BeforeEach
     void setUp() {
-        client = new BedrockQuarantineRegulationClient(agentClient, runtimeClient,
-                new BedrockProperties("ap-northeast-2", "kb-1", "model-x", 12, 4000));
+        client = new BedrockQuarantineRegulationClient(agentClient, runtimeClient, PROPERTIES,
+                new QuarantineReranker(null, new QuarantineRerankProperties(false, "ap-northeast-1", "arn", 50, 5, 0.25)));
+    }
+
+    @Test
+    @DisplayName("리랭크를 켜면 품목 질의만 후보 풀로 넓게 검색해 리랭크 결과만 싣고, 과태료 질의는 그대로 검색한다")
+    void judgeReranksOnlyItemQuery() {
+        // given
+        BedrockQuarantineRegulationClient rerankingClient =
+                new BedrockQuarantineRegulationClient(agentClient, runtimeClient, PROPERTIES, reranker);
+        given(reranker.isEnabled()).willReturn(true);
+        given(reranker.candidatePool()).willReturn(50);
+        givenRetrieved("품목 후보 A", "품목 후보 B");
+        given(reranker.rerank(any(), any())).willReturn(List.of("품목 후보 B"));
+        givenVerdict("PROHIBITED", "사유", null, "조치");
+
+        // when
+        rerankingClient.judge(JERKY);
+
+        // then
+        ArgumentCaptor<RetrieveRequest> captor = ArgumentCaptor.forClass(RetrieveRequest.class);
+        verify(agentClient, times(2)).retrieve(captor.capture());
+        assertThat(captor.getAllValues())
+                .extracting(request -> request.retrievalConfiguration().vectorSearchConfiguration().numberOfResults())
+                .containsExactly(50, 12);
+        verify(reranker).rerank("육포 육류 가공품 돼지고기 소고기 건조 가공 반입 검역", List.of("품목 후보 A", "품목 후보 B"));
+    }
+
+    @Test
+    @DisplayName("리랭크가 실패하면 판정을 멈추지 않고 벡터 상위 number-of-results개로 대신한다")
+    void judgeFallsBackToVectorResultsWhenRerankFails() {
+        // given
+        BedrockQuarantineRegulationClient rerankingClient =
+                new BedrockQuarantineRegulationClient(agentClient, runtimeClient, PROPERTIES, reranker);
+        given(reranker.isEnabled()).willReturn(true);
+        given(reranker.candidatePool()).willReturn(50);
+        givenRetrieved("품목 후보 A");
+        given(reranker.rerank(any(), any())).willThrow(new IllegalStateException("권한 없음"));
+        givenVerdict("PROHIBITED", "사유", null, "조치");
+
+        // when
+        rerankingClient.judge(JERKY);
+
+        // then
+        assertThat(capturedUserPrompt()).contains("품목 후보 A");
     }
 
     @Test

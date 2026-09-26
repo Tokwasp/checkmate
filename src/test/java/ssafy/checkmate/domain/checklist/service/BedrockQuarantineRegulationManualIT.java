@@ -5,9 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.assertj.core.api.SoftAssertions;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import ssafy.checkmate.domain.regulation.entity.RegulationLevel;
@@ -22,20 +22,14 @@ import ssafy.checkmate.domain.regulation.entity.RegulationLevel;
  *
  * - {@code test} 프로필을 쓰지 않는다(일부러 @ActiveProfiles 없음) — application.yaml의
  *   ${BEDROCK_KB_ID} 등이 로컬 .env / AWS 자격증명으로 그대로 해석된다.
- * - 호출할 때마다 과금된다(검색 2회 + Haiku 생성 1회 x 케이스 수). CI/팀원 환경에서 실수로 돌지
- *   않도록 <b>환경변수를 준 실행에서만</b> 돈다.
- *
- * 실행
- * <pre>
- *   QUARANTINE_BEDROCK=true ./gradlew test --tests "*BedrockQuarantineRegulationManualIT"
- * </pre>
+ * - 호출할 때마다 과금된다(검색 2회 + 판정 생성 1회 x 케이스 수). 실수로 돌지 않도록 클래스에
+ *   {@code @Disabled}를 걸어 두었다 — 돌려야 하면 로컬에서 그 줄을 지우고 필요한 메서드만 실행한다.
  *
  * 결과는 표준 출력에 {@code [MANUAL]} 접두사로 찍힌다(build/test-results의 XML 또는 IDE 콘솔).
  */
+@Disabled("실호출·과금 테스트 — 자동으로 돌지 않게 막아 둔다. 돌려야 하면 이 줄을 지우고 로컬에서만 실행")
 @SpringBootTest
 class BedrockQuarantineRegulationManualIT {
-
-    private static final String BEDROCK_ENV = "QUARANTINE_BEDROCK";
 
     private static final ItemAnalysis PORK_JERKY =
             new ItemAnalysis("육포", "육류 가공품", List.of("돼지고기", "소고기"), "건조 가공");
@@ -53,7 +47,6 @@ class BedrockQuarantineRegulationManualIT {
     private BedrockQuarantineRegulationClient bedrockClient;
 
     @Test
-    @EnabledIfEnvironmentVariable(named = BEDROCK_ENV, matches = "true")
     @DisplayName("지식베이스 필터(scope=import · KR)가 실제로 청크를 돌려준다 — 필터가 너무 좁으면 여기서 빈다")
     void retrievesKoreanImportRegulations() {
         String regulations = bedrockClient.retrieveRegulations(PORK_JERKY);
@@ -72,7 +65,6 @@ class BedrockQuarantineRegulationManualIT {
      * 시행령 별표 3)를 끌어오는지. 안 끌어오면 판정문에서 {@code penalty}가 통째로 빠진다.
      */
     @Test
-    @EnabledIfEnvironmentVariable(named = BEDROCK_ENV, matches = "true")
     @DisplayName("과태료 질의(②)가 금액이 적힌 부과기준 문서를 끌어온다 — 못 끌어오면 penalty가 빈다")
     void retrievesPenaltyAmounts() {
         String regulations = bedrockClient.retrieveRegulations(PORK_JERKY);
@@ -96,7 +88,6 @@ class BedrockQuarantineRegulationManualIT {
      * soft assertion을 쓴다.
      */
     @Test
-    @EnabledIfEnvironmentVariable(named = BEDROCK_ENV, matches = "true")
     @DisplayName("돼지고기 육포는 금지로 판정되고 ASF 금액 범위와 자진신고 안내가 함께 온다")
     void judgesPorkJerkyAsProhibited() {
         QuarantineVerdict verdict = judgeAndPrint(PORK_JERKY);
@@ -118,7 +109,6 @@ class BedrockQuarantineRegulationManualIT {
     }
 
     @Test
-    @EnabledIfEnvironmentVariable(named = BEDROCK_ENV, matches = "true")
     @DisplayName("생망고는 허용으로 새지 않는다 — 검역 대상 분류는 최소한 제한이어야 한다")
     void judgesFreshMangoAsNotAllowed() {
         QuarantineVerdict verdict = judgeAndPrint(MANGO);
@@ -128,7 +118,6 @@ class BedrockQuarantineRegulationManualIT {
     }
 
     @Test
-    @EnabledIfEnvironmentVariable(named = BEDROCK_ENV, matches = "true")
     @DisplayName("위스키는 면세 한도가 있어 제한으로 판정된다 — 조건부 물품을 금지로 과잉 판정하지 않는다")
     void judgesWhiskyAsRestricted() {
         QuarantineVerdict verdict = judgeAndPrint(WHISKY);
@@ -138,7 +127,6 @@ class BedrockQuarantineRegulationManualIT {
     }
 
     @Test
-    @EnabledIfEnvironmentVariable(named = BEDROCK_ENV, matches = "true")
     @DisplayName("일반 공산품은 허용으로 판정되고 과태료·조치가 붙지 않는다")
     void judgesPlushDollAsAllowed() {
         QuarantineVerdict verdict = judgeAndPrint(PLUSH_DOLL);
@@ -153,13 +141,28 @@ class BedrockQuarantineRegulationManualIT {
      * ({@code temperature=0}으로 잡아 둔 이유). 문구까지 토씨 하나 같기를 요구하지는 않는다.
      */
     @Test
-    @EnabledIfEnvironmentVariable(named = BEDROCK_ENV, matches = "true")
     @DisplayName("같은 물품을 두 번 판정해도 단계가 바뀌지 않는다")
     void judgesSameItemConsistently() {
         QuarantineVerdict first = judgeAndPrint(PORK_JERKY);
         QuarantineVerdict second = judgeAndPrint(PORK_JERKY);
 
         assertThat(second.level()).isEqualTo(first.level());
+    }
+
+    /**
+     * 운영 경로(품목 질의 리랭크 포함)로 한 건만 판정한다 — 리랭크 설정·권한이 실제로 동작하는지 확인하는 용도.
+     * 상아는 벡터 검색만으로는 상아 규정이 11위라 top-5에 없고, 리랭크 뒤 1위가 되는 물품이다.
+     * 로그에 "품목 질의 리랭크 후보=…건 채택=…건"이 찍히면 리랭크가 돈 것이고, "리랭크 실패"가 찍히면
+     * 권한·모델 접근을 확인해야 한다.
+     */
+    @Test
+    @DisplayName("운영 경로(품목 질의 리랭크)로 상아 조각품 한 건을 판정한다")
+    void judgesOneItemWithRerank() {
+        ItemAnalysis ivory = new ItemAnalysis("상아 조각품", "야생동식물 제품", List.of("상아"), "완제품");
+
+        QuarantineVerdict verdict = judgeAndPrint(ivory);
+
+        assertThat(verdict.level()).isEqualTo(RegulationLevel.PROHIBITED);
     }
 
     private QuarantineVerdict judgeAndPrint(ItemAnalysis item) {

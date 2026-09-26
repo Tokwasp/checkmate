@@ -6,9 +6,9 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import software.amazon.awssdk.services.bedrockagentruntime.BedrockAgentRuntimeClient;
@@ -34,7 +34,7 @@ import ssafy.checkmate.global.config.BedrockProperties;
  *        --tests "ssafy.checkmate.domain.checklist.service.CarriageDirectionManualIT"}
  * 결과는 {@code build/rag-carriage-direction.md}에 쌓인다.
  */
-@EnabledIfEnvironmentVariable(named = "RAG_COMPARE", matches = "true")
+@Disabled("실호출·과금 테스트 — 자동으로 돌지 않게 막아 둔다. 돌려야 하면 이 줄을 지우고 로컬에서만 실행")
 @SpringBootTest
 class CarriageDirectionManualIT {
 

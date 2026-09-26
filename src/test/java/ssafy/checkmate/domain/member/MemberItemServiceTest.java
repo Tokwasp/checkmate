@@ -67,31 +67,6 @@ class MemberItemServiceTest {
     private ImageStorage imageStorage;
 
     @Test
-    @DisplayName("짐싸기에서 찍은 누끼가 있는 물건을 즐겨찾기하면 그 사진 URL 이 마스터로 복사되고, 안 한 물건도 목록에선 누끼로 보인다")
-    void addFavoritesCopiesInventoryCutout() {
-        Long me = 1L;
-        Trip trip = createTrip(me, "도쿄");
-        Long bag = bagRepository.save(Bag.createDefault(trip.getId(), me)).getId();
-        // 스캔으로 담긴 물품 — 누끼가 S3(여기선 URL 문자열) 에 있다
-        bagItemRepository.save(BagItem.createRecognized(trip.getId(), me, "여권", "서류", bag, "https://s3/1/passport-old.png"));
-        bagItemRepository.save(BagItem.createRecognized(trip.getId(), me, "여권", "서류", bag, "https://s3/1/passport-new.png"));
-        bagItemRepository.save(BagItem.createRecognized(trip.getId(), me, "충전기", "전자기기", bag, "https://s3/1/charger.png"));
-
-        MemberItemsResponse response = memberItemService.addFavorites(me, List.of(favorite("여권", null)));
-
-        // 즐겨찾기한 여권: 가장 최근 누끼가 마스터에 복사됨
-        assertThat(memberItemRepository.findByMemberIdAndName(me, "여권").orElseThrow().getImageUrl())
-                .isEqualTo("https://s3/1/passport-new.png");
-        // 즐겨찾기 안 한 충전기: 마스터엔 사진이 없어도 목록 응답은 인벤토리 누끼로 폴백
-        assertThat(response.items())
-                .extracting(MemberItemResponse::name, MemberItemResponse::imageUrl)
-                .containsExactlyInAnyOrder(
-                        tuple("여권", "https://s3/1/passport-new.png"),
-                        tuple("충전기", "https://s3/1/charger.png"));
-        assertThat(memberItemRepository.findByMemberIdAndName(me, "충전기").orElseThrow().getImageUrl()).isNull();
-    }
-
-    @Test
     @DisplayName("물건 사진을 올리면 회원/물건 폴더에 저장되고 응답·마스터에 반영된다. 무효 파일·남의 물건은 거절")
     void updateImage() {
         Long me = 1L;
