@@ -36,8 +36,8 @@ class GmsItemTranslationClientTest {
     @Test
     @DisplayName("이름 목록을 한 번에 보내고 이름 → 현지어 검색어로 받는다")
     void translate() {
-        given(gmsClient.chat(anyString(), anyString(), anyInt())).willReturn("""
-                {"translations": {"칼": "刃物 ナイフ 凶器", "치약": "歯磨き粉 液体物"}}
+        given(gmsClient.chatJson(anyString(), anyString(), anyInt())).willReturn("""
+                {"칼": "刃物 ナイフ 凶器", "치약": "歯磨き粉 液体物"}
                 """);
 
         Map<String, String> terms = client.translate(List.of("칼", "치약"), CountryJurisdiction.JP);
@@ -45,29 +45,29 @@ class GmsItemTranslationClientTest {
         assertThat(terms).containsExactly(
                 Map.entry("칼", "刃物 ナイフ 凶器"),
                 Map.entry("치약", "歯磨き粉 液体物"));
-        verify(gmsClient, times(1)).chat(anyString(), anyString(), anyInt());
+        verify(gmsClient, times(1)).chatJson(anyString(), anyString(), anyInt());
     }
 
     @Test
     @DisplayName("사용자 프롬프트에 목표 언어 이름과 물품 목록이 들어간다")
     void userPromptCarriesLanguageAndNames() {
-        given(gmsClient.chat(anyString(), anyString(), anyInt())).willReturn("""
-                {"translations": {"칼": "刀具"}}
+        given(gmsClient.chatJson(anyString(), anyString(), anyInt())).willReturn("""
+                {"칼": "刀具"}
                 """);
 
         client.translate(List.of("칼"), CountryJurisdiction.TW);
 
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
-        verify(gmsClient).chat(anyString(), captor.capture(), anyInt());
+        verify(gmsClient).chatJson(anyString(), captor.capture(), anyInt());
         assertThat(captor.getValue()).contains("중국어 번체").contains("- 칼");
     }
 
     @Test
     @DisplayName("모델이 코드펜스로 감싸도 벗겨서 읽는다")
     void translateStripsCodeFence() {
-        given(gmsClient.chat(anyString(), anyString(), anyInt())).willReturn("""
+        given(gmsClient.chatJson(anyString(), anyString(), anyInt())).willReturn("""
                 ```json
-                {"translations": {"가위": "はさみ 刃物"}}
+                {"가위": "はさみ 刃物"}
                 ```
                 """);
 
@@ -78,8 +78,8 @@ class GmsItemTranslationClientTest {
     @Test
     @DisplayName("요청하지 않은 이름과 빈 값은 버린다 — 엉뚱한 낱말이 질의를 흐리면 안 된다")
     void translateDropsUnknownAndBlank() {
-        given(gmsClient.chat(anyString(), anyString(), anyInt())).willReturn("""
-                {"translations": {"칼": "刃物", "없던물품": "謎", "치약": "  "}}
+        given(gmsClient.chatJson(anyString(), anyString(), anyInt())).willReturn("""
+                {"칼": "刃物", "없던물품": "謎", "치약": "  "}
                 """);
 
         assertThat(client.translate(List.of("칼", "치약"), CountryJurisdiction.JP))
@@ -89,31 +89,31 @@ class GmsItemTranslationClientTest {
     @Test
     @DisplayName("한 번 실패하면 한 번 더 부른다")
     void translateRetriesOnce() {
-        given(gmsClient.chat(anyString(), anyString(), anyInt()))
+        given(gmsClient.chatJson(anyString(), anyString(), anyInt()))
                 .willThrow(new IllegalStateException("일시 오류"))
                 .willReturn("""
-                        {"translations": {"칼": "刃物"}}
+                        {"칼": "刃物"}
                         """);
 
         assertThat(client.translate(List.of("칼"), CountryJurisdiction.JP))
                 .containsEntry("칼", "刃物");
-        verify(gmsClient, times(2)).chat(anyString(), anyString(), anyInt());
+        verify(gmsClient, times(2)).chatJson(anyString(), anyString(), anyInt());
     }
 
     @Test
     @DisplayName("재시도까지 실패하면 빈 결과를 준다 — 검사 자체를 멈추지는 않는다")
     void translateFallsBackToEmpty() {
-        given(gmsClient.chat(anyString(), anyString(), anyInt())).willThrow(new IllegalStateException("장애"));
+        given(gmsClient.chatJson(anyString(), anyString(), anyInt())).willThrow(new IllegalStateException("장애"));
 
         assertThat(client.translate(List.of("칼"), CountryJurisdiction.JP)).isEmpty();
-        verify(gmsClient, times(2)).chat(anyString(), anyString(), anyInt());
+        verify(gmsClient, times(2)).chatJson(anyString(), anyString(), anyInt());
     }
 
     @Test
     @DisplayName("옮길 이름이 없으면 GMS를 부르지 않는다")
     void translateSkipsEmptyInput() {
         assertThat(client.translate(List.of(), CountryJurisdiction.JP)).isEmpty();
-        verify(gmsClient, times(0)).chat(any(), any(), anyInt());
+        verify(gmsClient, times(0)).chatJson(any(), any(), anyInt());
     }
 
     /**
@@ -124,7 +124,7 @@ class GmsItemTranslationClientTest {
     @Test
     @DisplayName("재시도까지 실패하면 [gms-call-fail] 마커로 ERROR 로그를 남긴다")
     void translateLogsCallFailMarkerWhenBothAttemptsFail() {
-        given(gmsClient.chat(anyString(), anyString(), anyInt())).willThrow(new IllegalStateException("장애"));
+        given(gmsClient.chatJson(anyString(), anyString(), anyInt())).willThrow(new IllegalStateException("장애"));
         Logger logger = (Logger) LoggerFactory.getLogger(GmsItemTranslationClient.class);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
@@ -153,14 +153,14 @@ class GmsItemTranslationClientTest {
     @Test
     @DisplayName("물품 수에 비례해 max_tokens를 명시적으로 보낸다 — 응답 잘림 방지")
     void translateSendsMaxTokensScaledByItemCount() {
-        given(gmsClient.chat(anyString(), anyString(), anyInt())).willReturn("{\"translations\": {}}");
+        given(gmsClient.chatJson(anyString(), anyString(), anyInt())).willReturn("{}");
 
         List<String> twentyThreeItems = java.util.stream.IntStream.range(0, 23)
                 .mapToObj(i -> "물품" + i).toList();
         client.translate(twentyThreeItems, CountryJurisdiction.TH);
 
         ArgumentCaptor<Integer> maxTokensCaptor = ArgumentCaptor.forClass(Integer.class);
-        verify(gmsClient).chat(anyString(), anyString(), maxTokensCaptor.capture());
+        verify(gmsClient).chatJson(anyString(), anyString(), maxTokensCaptor.capture());
         // 23종 x 80토큰/종 = 1,840 — 게이트웨이 기본 상한(관측상 수백 토큰 수준)보다 확실히 크다.
         assertThat(maxTokensCaptor.getValue()).isEqualTo(1840);
     }
@@ -168,14 +168,14 @@ class GmsItemTranslationClientTest {
     @Test
     @DisplayName("물품이 적어도 max_tokens 최소값(300) 밑으로는 안 내려간다")
     void translateNeverSendsBelowMinimumMaxTokens() {
-        given(gmsClient.chat(anyString(), anyString(), anyInt())).willReturn("""
-                {"translations": {"칼": "刃物"}}
+        given(gmsClient.chatJson(anyString(), anyString(), anyInt())).willReturn("""
+                {"칼": "刃物"}
                 """);
 
         client.translate(List.of("칼"), CountryJurisdiction.JP);
 
         ArgumentCaptor<Integer> maxTokensCaptor = ArgumentCaptor.forClass(Integer.class);
-        verify(gmsClient).chat(anyString(), anyString(), maxTokensCaptor.capture());
+        verify(gmsClient).chatJson(anyString(), anyString(), maxTokensCaptor.capture());
         assertThat(maxTokensCaptor.getValue()).isEqualTo(300);
     }
 }

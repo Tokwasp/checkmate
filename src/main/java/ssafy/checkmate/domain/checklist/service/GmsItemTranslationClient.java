@@ -5,13 +5,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
-import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import ssafy.checkmate.domain.checklist.entity.CountryJurisdiction;
+import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -41,6 +39,8 @@ public class GmsItemTranslationClient implements ItemTranslationClient {
      */
     private static final int TOKENS_PER_ITEM = 80;
     private static final int MIN_TOKENS = 300;
+    private static final TypeReference<Map<String, String>> TRANSLATIONS = new TypeReference<>() {
+    };
 
     /** 같은 패키지의 테스트가 실제로 나가는 문구를 그대로 확인한다. */
     static final String SYSTEM_PROMPT = """
@@ -49,7 +49,7 @@ public class GmsItemTranslationClient implements ItemTranslationClient {
             한국어 물품 이름 목록을 받아 각각을 지정된 언어의 검색어로 옮기고, 아래 JSON 객체 하나만
             출력하세요. 설명·코드펜스·머리말은 쓰지 마세요.
 
-            {"translations": {"한국어 이름": "현지어 검색어"}}
+            {"한국어 이름": "현지어 검색어", "한국어 이름": "현지어 검색어"}
 
             규칙
             - 키는 받은 한국어 이름을 그대로 씁니다. 고치거나 빠뜨리지 마세요.
@@ -116,8 +116,17 @@ public class GmsItemTranslationClient implements ItemTranslationClient {
         }
     }
 
+    /**
+     * JSON 모드로 부르고({@link GmsClient#chatJson}), 응답은 이름 → 검색어 한 겹 객체로 받는다.
+     *
+     * 예전엔 {@code {"translations": {...}}} 두 겹으로 받았는데, gpt-4o-mini가 첫 물품 뒤에서 안쪽
+     * 객체를 일찍 닫아 {@code {"translations": {"가위": ".."}, "보조배터리": ".."}}} 처럼 쓰는 일이
+     * 실측 20회 중 2~5회 있었다. 프롬프트만 쓰면 남는 {@code }} 때문에 파싱이 실패해 재시도로
+     * 1.5~2.5초가 늘었고, JSON 모드만 켜면 문법은 맞지만 두 번째 물품이 바깥으로 빠져 조용히
+     * 누락됐다. 겹을 없애면 일찍 닫을 안쪽 객체 자체가 없다.
+     */
     private Map<String, String> ask(List<String> itemNames, CountryJurisdiction jurisdiction) {
-        String content = gmsClient.chat(
+        String content = gmsClient.chatJson(
                 SYSTEM_PROMPT, userPrompt(itemNames, jurisdiction), maxTokensFor(itemNames));
         return parse(content, itemNames);
     }
@@ -141,14 +150,11 @@ public class GmsItemTranslationClient implements ItemTranslationClient {
         if (content == null || content.isBlank()) {
             throw new IllegalStateException("번역 응답이 비어 있습니다.");
         }
-        TranslationDto dto = objectMapper.readValue(GmsResponses.stripCodeFence(content), TranslationDto.class);
-        if (dto.getTranslations() == null) {
-            throw new IllegalStateException("번역 응답에 translations가 없습니다.");
-        }
+        Map<String, String> received = objectMapper.readValue(GmsResponses.stripCodeFence(content), TRANSLATIONS);
 
         Map<String, String> translations = new LinkedHashMap<>();
         itemNames.forEach(name -> {
-            String terms = dto.getTranslations().get(name);
+            String terms = received.get(name);
             if (terms != null && !terms.isBlank()) {
                 translations.put(name, terms.trim());
             }
@@ -158,12 +164,5 @@ public class GmsItemTranslationClient implements ItemTranslationClient {
 
     private static long elapsedMillisSince(long startedAtNanos) {
         return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos);
-    }
-
-    @Getter
-    @Setter
-    @NoArgsConstructor
-    static class TranslationDto {
-        private Map<String, String> translations;
     }
 }

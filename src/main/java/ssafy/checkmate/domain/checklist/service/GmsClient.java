@@ -37,7 +37,7 @@ public class GmsClient {
      * {@code UnexpectedEndOfInputException}).
      */
     public String chat(String systemPrompt, String userPrompt) {
-        return chat(systemPrompt, userPrompt, null);
+        return chat(systemPrompt, userPrompt, null, null);
     }
 
     /**
@@ -46,11 +46,22 @@ public class GmsClient {
      * 구분하기 위해서다.
      */
     public String chat(String systemPrompt, String userPrompt, int maxTokens) {
-        return chat(systemPrompt, userPrompt, (Integer) maxTokens);
+        return chat(systemPrompt, userPrompt, (Integer) maxTokens, null);
     }
 
-    private String chat(String systemPrompt, String userPrompt, Integer maxTokens) {
-        ChatCompletionRequest request = new ChatCompletionRequest(model, maxTokens, List.of(
+    /**
+     * 응답을 JSON 객체로 강제한다({@code response_format: json_object}). 프롬프트로 "JSON만 쓰라"고
+     * 부탁하는 것과 달리, 모델이 문법에 맞지 않는 토큰을 아예 고르지 못하게 막는다 — 닫는 괄호를
+     * 하나 더 붙이는 식의 파싱 실패가 사라진다. 다만 max_tokens에서 잘리는 것까지 막지는 못한다.
+     *
+     * OpenAI 규칙상 메시지 어딘가에 "JSON"이라는 낱말이 있어야 한다.
+     */
+    public String chatJson(String systemPrompt, String userPrompt, int maxTokens) {
+        return chat(systemPrompt, userPrompt, maxTokens, ResponseFormat.JSON_OBJECT);
+    }
+
+    private String chat(String systemPrompt, String userPrompt, Integer maxTokens, ResponseFormat responseFormat) {
+        ChatCompletionRequest request = new ChatCompletionRequest(model, maxTokens, responseFormat, List.of(
                 new ChatMessage("system", systemPrompt),
                 new ChatMessage("user", userPrompt)));
 
@@ -78,7 +89,10 @@ public class GmsClient {
         }
     }
 
-    /** {@code maxTokens}가 null이면 필드 자체를 생략한다 — 기존 호출부의 요청 형태를 그대로 유지하기 위해서다. */
+    /**
+     * {@code maxTokens}·{@code responseFormat}이 null이면 필드 자체를 생략한다 — 기존 호출부의 요청
+     * 형태를 그대로 유지하기 위해서다.
+     */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private static class ChatCompletionRequest {
         @Getter
@@ -87,12 +101,28 @@ public class GmsClient {
         @JsonProperty("max_tokens")
         private final Integer maxTokens;
         @Getter
+        @JsonProperty("response_format")
+        private final ResponseFormat responseFormat;
+        @Getter
         private final List<ChatMessage> messages;
 
-        private ChatCompletionRequest(String model, Integer maxTokens, List<ChatMessage> messages) {
+        private ChatCompletionRequest(String model, Integer maxTokens, ResponseFormat responseFormat,
+                List<ChatMessage> messages) {
             this.model = model;
             this.maxTokens = maxTokens;
+            this.responseFormat = responseFormat;
             this.messages = messages;
+        }
+    }
+
+    private static class ResponseFormat {
+        private static final ResponseFormat JSON_OBJECT = new ResponseFormat("json_object");
+
+        @Getter
+        private final String type;
+
+        private ResponseFormat(String type) {
+            this.type = type;
         }
     }
 

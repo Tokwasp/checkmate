@@ -82,6 +82,43 @@ class GmsClientTest {
         server.verify();
     }
 
+    @Test
+    @DisplayName("chatJson은 요청 본문에 response_format=json_object를 실어 보낸다")
+    void chatJsonSendsResponseFormat() {
+        // given
+        RestClient.Builder builder = RestClient.builder().baseUrl(BASE_URL);
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(BASE_URL))
+                .andExpect(content().string(Matchers.containsString("\"response_format\":{\"type\":\"json_object\"}")))
+                .andExpect(content().string(Matchers.containsString("\"max_tokens\":300")))
+                .andRespond(withSuccess("""
+                        {"choices":[{"message":{"role":"assistant","content":"{}"}}]}
+                        """, MediaType.APPLICATION_JSON));
+        GmsClient client = new GmsClient(builder.build(), new GmsProperties(BASE_URL, "key", "test-model", BASE_URL, "test-vision-model"));
+
+        // when // then
+        client.chatJson("system", "user", 300);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("chat은 response_format 필드를 보내지 않는다 — 다른 호출부의 요청 형태는 그대로다")
+    void chatOmitsResponseFormat() {
+        // given
+        RestClient.Builder builder = RestClient.builder().baseUrl(BASE_URL);
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(BASE_URL))
+                .andExpect(content().string(Matchers.not(Matchers.containsString("response_format"))))
+                .andRespond(withSuccess("""
+                        {"choices":[{"message":{"role":"assistant","content":"ok"}}]}
+                        """, MediaType.APPLICATION_JSON));
+        GmsClient client = new GmsClient(builder.build(), new GmsProperties(BASE_URL, "key", "test-model", BASE_URL, "test-vision-model"));
+
+        // when // then
+        client.chat("system", "user", 300);
+        server.verify();
+    }
+
     /** 기존 2-인자 호출은 요청 형태가 그대로여야 한다 — max_tokens 필드 자체가 없어야 한다. */
     @Test
     @DisplayName("max_tokens를 안 주면 요청 본문에 그 필드 자체가 없다")
