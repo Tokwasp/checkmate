@@ -100,6 +100,7 @@ checkmate/                  # Spring Boot API 서버
 ## 📄 문서 / 트러블슈팅
 
 - [인증 설계](docs/auth.md)
+- [검역 규정 RAG에 Rerank 적용 — 판정 정확도 유지, 입력 토큰 38% 절감](docs/troubleshooting/quarantine-rerank.md)
 
 ## 👥 팀 소개
 
