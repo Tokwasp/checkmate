@@ -1,10 +1,8 @@
 # 🧳 CheckMate — AI 기반 여행 짐 싸기 도우미
 
-> 카메라로 짐을 싸고, AI가 기내·위탁 반입 규정까지 확인해 줍니다.
-
 여행지와 일정에 맞춘 AI 체크리스트를 만들고, 카메라로 비춘 물건을 **온디바이스 AI**로 인식해 가방에 담으며, **RAG 기반 반입 규정 검사**로 출국 전 짐을 점검하는 모바일 서비스
 
-**담당 역할** — 백엔드 전반과 인프라를 담당했습니다.
+**담당 역할** — 백엔드 및 인프라
 
 ---
 ## 💡 기획 배경
@@ -30,39 +28,20 @@
 ## 🛠️ 기술 스택
 
 ### Frontend
-| 기술 | 사용처 |
-| --- | --- |
-| React Native 0.86 + Expo 57, TypeScript | 모바일 앱 개발 |
-| Expo Router, Zustand, TanStack Query, NativeWind | 화면 라우팅, 전역 상태 관리, 서버 데이터 캐싱, 스타일링 |
-| react-native-vision-camera + react-native-fast-tflite | 카메라 프레임을 받아 온디바이스로 물체 인식 |
+- React Native, Expo, TypeScript
+- Zustand, TanStack Query, NativeWind
+- YOLO, TFLite (온디바이스 물체 인식)
 
-### Backend — 이 저장소
-| 기술 | 사용처 |
-| --- | --- |
-| Java 21, Spring Boot 4.1.1 (MVC, Data JPA, Validation) | API 서버 전반 |
-| MySQL 8.0 (운영), H2 (로컬) | 회원·여행·체크리스트·가방 데이터 저장 |
-| JWT(jjwt 0.13), Google ID Token | Google 소셜 로그인 및 API 인증 |
-| AWS SDK — S3 | 여행 표지·물품 사진 업로드 |
-| AWS SDK — Bedrock Agent Runtime / Runtime | 반입 규정 검사(RAG 검색 + LLM 판정)에 사용 |
-| Open-Meteo, Google Places | 여행지 날씨 조회(체크리스트 추천), 목적지 자동완성 |
+### Backend
+- Java 21, Spring Boot, Spring Data JPA
+- MySQL, H2
+- JWT, Google 로그인
+- Amazon Bedrock (Knowledge Base, Claude Haiku 4.5), Cohere Rerank
 
-### AI
-| 기술 | 사용처 |
-| --- | --- |
-| YOLO26n-seg | 여행용품 23개 클래스 물체 탐지 + 세그멘테이션 (실사진 정확도 34.2% → 83.2%) |
-| TFLite | 모델 변환 후 앱에서 온디바이스 추론 (영상을 서버로 보내지 않아 프라이버시 보호) |
-| Bedrock Knowledge Base + S3 Vectors + Titan Text Embeddings V2 | 항공보안·세관·검역 규정 문서를 임베딩해 반입 규정 검사 RAG에 사용 |
-| Claude Haiku 4.5 (Bedrock) | 검색된 규정을 근거로 기내/위탁·입국 반입 가능 여부 판정 |
-| Cohere Rerank 3.5 | 검역 규정 검색 결과 리랭크 — 입력 토큰 38.4% 절감 |
-
-### Infra / CI-CD
-| 기술 | 사용처 |
-| --- | --- |
-| AWS VPC, EC2, RDS(MySQL) | 서버·DB 운영 (DB는 Private Subnet에 배치) |
-| SSM Parameter Store, CloudWatch Logs | 환경변수(시크릿) 관리, 서버 로그 수집 |
-| Nginx + Let's Encrypt, Docker Compose | HTTPS 리버스 프록시, 컨테이너 배포 |
-| GitLab CI | `develop` 브랜치 변경 시 EC2 자동 배포 |
-| Firebase App Distribution, Expo EAS Update | 테스트 앱 배포, OTA 업데이트 |
+### Infra
+- AWS EC2, RDS, S3, VPC, SSM Parameter Store, CloudWatch
+- Docker Compose, Nginx, Let's Encrypt
+- GitLab CI, Firebase App Distribution, Expo EAS Update
 
 ---
 ## 🏗️ 시스템 아키텍처
@@ -71,8 +50,6 @@
 
 1. **온디바이스 인식** — 카메라 프레임을 앱 안의 YOLO(TFLite) 모델로 인식해 서버 왕복 없이 물건을 판별
 2. **반입 규정 검사(RAG)** — 물품 이름별로 Bedrock Knowledge Base를 검색하고, 검색된 규정을 근거로 Claude Haiku 4.5가 기내/위탁 반입 여부를 판정
-   - 항공보안 규정(`avsec`) → 출국 짐 기내·위탁 판정
-   - 한국 입국 세관·검역 규정(`import`) → 기념품 반입 판정 (Cohere Rerank로 검색 결과 리랭크)
 3. **배포** — `develop` 브랜치 backend 변경 시 GitLab Runner가 SSM Parameter Store에서 `.env`를 만들고 `docker compose up -d --build`로 EC2에 배포
 
 ---
@@ -122,7 +99,6 @@ checkmate/                  # Spring Boot API 서버
 
 ## 📄 문서 / 트러블슈팅
 
-- [인증 설계](docs/auth.md)
 - [검역 규정 RAG에 Rerank 적용 — 판정 정확도 유지, 입력 토큰 38% 절감](docs/troubleshooting/quarantine-rerank.md)
 
 ## 👥 팀 소개
