@@ -3,6 +3,10 @@ package ssafy.checkmate.domain.checklist.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -32,6 +36,7 @@ import software.amazon.awssdk.services.bedrockruntime.model.Message;
 import software.amazon.awssdk.services.bedrockruntime.model.StopReason;
 import software.amazon.awssdk.services.bedrockruntime.model.TokenUsage;
 import software.amazon.awssdk.services.bedrockruntime.model.ToolUseBlock;
+import ssafy.checkmate.domain.checklist.budget.RagBudget;
 import ssafy.checkmate.domain.regulation.entity.RegulationLevel;
 import ssafy.checkmate.global.config.BedrockProperties;
 import ssafy.checkmate.global.config.QuarantineRerankProperties;
@@ -59,10 +64,14 @@ class BedrockQuarantineRegulationClientTest {
     @Mock
     private QuarantineReranker reranker;
 
+    @Mock
+    private RagBudget ragBudget;
+
     @BeforeEach
     void setUp() {
+        lenient().when(ragBudget.start(anyString(), anyInt(), anyBoolean(), anyInt())).thenReturn(RagBudget.unmetered());
         client = new BedrockQuarantineRegulationClient(agentClient, runtimeClient, PROPERTIES,
-                new QuarantineReranker(null, new QuarantineRerankProperties(false, "ap-northeast-1", "arn", 50, 5, 0.25)));
+                new QuarantineReranker(null, new QuarantineRerankProperties(false, "ap-northeast-1", "arn", 50, 5, 0.25)), ragBudget);
     }
 
     @Test
@@ -70,7 +79,7 @@ class BedrockQuarantineRegulationClientTest {
     void judgeReranksOnlyItemQuery() {
         // given
         BedrockQuarantineRegulationClient rerankingClient =
-                new BedrockQuarantineRegulationClient(agentClient, runtimeClient, PROPERTIES, reranker);
+                new BedrockQuarantineRegulationClient(agentClient, runtimeClient, PROPERTIES, reranker, ragBudget);
         given(reranker.isEnabled()).willReturn(true);
         given(reranker.candidatePool()).willReturn(50);
         givenRetrieved("품목 후보 A", "품목 후보 B");
@@ -94,7 +103,7 @@ class BedrockQuarantineRegulationClientTest {
     void judgeFallsBackToVectorResultsWhenRerankFails() {
         // given
         BedrockQuarantineRegulationClient rerankingClient =
-                new BedrockQuarantineRegulationClient(agentClient, runtimeClient, PROPERTIES, reranker);
+                new BedrockQuarantineRegulationClient(agentClient, runtimeClient, PROPERTIES, reranker, ragBudget);
         given(reranker.isEnabled()).willReturn(true);
         given(reranker.candidatePool()).willReturn(50);
         givenRetrieved("품목 후보 A");
