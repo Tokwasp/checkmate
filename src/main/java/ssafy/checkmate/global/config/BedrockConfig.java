@@ -4,9 +4,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import software.amazon.awssdk.awscore.client.builder.AwsClientBuilder;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.bedrockagentruntime.BedrockAgentRuntimeClient;
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
+import ssafy.checkmate.domain.checklist.budget.RagBudgetProperties;
 import ssafy.checkmate.domain.checklist.service.QuarantineReranker;
 
 /**
@@ -17,20 +19,20 @@ import ssafy.checkmate.domain.checklist.service.QuarantineReranker;
  */
 @Slf4j
 @Configuration
-@EnableConfigurationProperties({BedrockProperties.class, QuarantineRerankProperties.class})
+@EnableConfigurationProperties({BedrockProperties.class, QuarantineRerankProperties.class, RagBudgetProperties.class})
 public class BedrockConfig {
 
     @Bean
-    public BedrockAgentRuntimeClient bedrockAgentRuntimeClient(BedrockProperties properties) {
+    public BedrockAgentRuntimeClient bedrockAgentRuntimeClient(BedrockProperties properties, RagBudgetProperties budget) {
         warnIfNotConfigured(properties);
-        return BedrockAgentRuntimeClient.builder()
+        return configureRetries(BedrockAgentRuntimeClient.builder(), budget)
                 .region(Region.of(properties.region()))
                 .build();
     }
 
     @Bean
-    public BedrockRuntimeClient bedrockRuntimeClient(BedrockProperties properties) {
-        return BedrockRuntimeClient.builder()
+    public BedrockRuntimeClient bedrockRuntimeClient(BedrockProperties properties, RagBudgetProperties budget) {
+        return configureRetries(BedrockRuntimeClient.builder(), budget)
                 .region(Region.of(properties.region()))
                 .build();
     }
@@ -40,11 +42,19 @@ public class BedrockConfig {
      * 둘 두면 주입이 모호해지므로 클라이언트를 빈으로 노출하지 않고 {@link QuarantineReranker} 안에 넣는다.
      */
     @Bean
-    public QuarantineReranker quarantineReranker(QuarantineRerankProperties properties) {
-        BedrockAgentRuntimeClient rerankClient = BedrockAgentRuntimeClient.builder()
+    public QuarantineReranker quarantineReranker(QuarantineRerankProperties properties, RagBudgetProperties budget) {
+        BedrockAgentRuntimeClient rerankClient = configureRetries(BedrockAgentRuntimeClient.builder(), budget)
                 .region(Region.of(properties.region()))
                 .build();
         return new QuarantineReranker(rerankClient, properties);
+    }
+
+    private <B extends AwsClientBuilder<B, ?>> B configureRetries(B builder, RagBudgetProperties budget) {
+        if (budget.enabled()) {
+            // 예약은 유료 호출 1회 기준이므로 SDK가 내부적으로 같은 호출을 재전송하지 않게 한다.
+            builder.overrideConfiguration(config -> config.retryStrategy(retry -> retry.maxAttempts(1)));
+        }
+        return builder;
     }
 
     private void warnIfNotConfigured(BedrockProperties properties) {

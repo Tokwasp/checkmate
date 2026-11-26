@@ -37,6 +37,7 @@ import software.amazon.awssdk.services.bedrockruntime.model.ToolConfiguration;
 import software.amazon.awssdk.services.bedrockruntime.model.ToolInputSchema;
 import software.amazon.awssdk.services.bedrockruntime.model.ToolSpecification;
 import software.amazon.awssdk.services.bedrockruntime.model.ToolUseBlock;
+import ssafy.checkmate.domain.checklist.budget.RagBudget;
 import ssafy.checkmate.domain.checklist.entity.CountryJurisdiction;
 import ssafy.checkmate.global.config.BedrockProperties;
 
@@ -120,14 +121,18 @@ public class BedrockAviationRegulationClient implements AviationRegulationClient
     private final BedrockAgentRuntimeClient bedrockAgentRuntimeClient;
     private final BedrockRuntimeClient bedrockRuntimeClient;
     private final BedrockProperties properties;
+    private final RagBudget ragBudget;
 
     @Override
     public List<SecurityVerdict> judge(CountryJurisdiction jurisdiction, List<SecurityCheckTarget> targets) {
         if (targets.isEmpty()) {
             return List.of();
         }
-        String regulations = retrieveRegulations(jurisdiction, targets);
-        return generateVerdicts(regulations, targets);
+        try (RagBudget.Request budget = ragBudget.start(properties.modelId(), searchTerms(targets).size(),
+                false, maxTokensFor(targets))) {
+            String regulations = retrieveRegulations(jurisdiction, targets, budget);
+            return generateVerdicts(regulations, targets, budget);
+        }
     }
 
     /**
@@ -152,12 +157,21 @@ public class BedrockAviationRegulationClient implements AviationRegulationClient
      * 같은 청크가 여러 물품에서 겹쳐 나오므로 본문 기준으로 중복을 제거한다.
      */
     String retrieveRegulations(CountryJurisdiction jurisdiction, List<SecurityCheckTarget> targets) {
-        RetrievalFilter filter = filterFor(jurisdiction);
-        List<String> queries = targets.stream()
+        return retrieveRegulations(jurisdiction, targets, RagBudget.unmetered());
+    }
+
+    private List<String> searchTerms(List<SecurityCheckTarget> targets) {
+        return targets.stream()
                 .map(SecurityCheckTarget::searchTerms)
                 .filter(query -> !query.isBlank())
                 .distinct()
                 .toList();
+    }
+
+    private String retrieveRegulations(CountryJurisdiction jurisdiction, List<SecurityCheckTarget> targets,
+                                       RagBudget.Request budget) {
+        RetrievalFilter filter = filterFor(jurisdiction);
+        List<String> queries = searchTerms(targets);
 
         List<String> skipped = targets.stream()
                 .filter(target -> target.searchTerms().isBlank())
@@ -171,7 +185,7 @@ public class BedrockAviationRegulationClient implements AviationRegulationClient
 
         long startedAt = System.nanoTime();
         Set<String> chunks = new LinkedHashSet<>();
-        queries.forEach(query -> chunks.addAll(retrieveFor(query, filter)));
+        queries.forEach(query -> chunks.addAll(retrieveFor(query, filter, budget)));
 
         log.info("[security-check] 규정 검색 완료 jurisdiction={} 물품={}종(검색 {}종) 청크={}건(중복 제거 후) 소요={}ms",
                 jurisdiction, targets.stream().map(SecurityCheckTarget::getName).distinct().count(),
@@ -180,7 +194,8 @@ public class BedrockAviationRegulationClient implements AviationRegulationClient
         return String.join("\n\n---\n\n", chunks);
     }
 
-    private List<String> retrieveFor(String searchTerms, RetrievalFilter filter) {
+    private List<String> retrieveFor(String searchTerms, RetrievalFilter filter, RagBudget.Request budget) {
+        budget.chargeRetrieve();
         RetrieveResponse response = bedrockAgentRuntimeClient.retrieve(RetrieveRequest.builder()
                 .knowledgeBaseId(properties.knowledgeBaseId())
                 .retrievalQuery(KnowledgeBaseQuery.builder()
@@ -220,9 +235,10 @@ public class BedrockAviationRegulationClient implements AviationRegulationClient
     }
 
     /** 도구 사용으로 출력 스키마를 강제해 판정을 받는다. */
-    private List<SecurityVerdict> generateVerdicts(String regulations, List<SecurityCheckTarget> targets) {
+    private List<SecurityVerdict> generateVerdicts(String regulations, List<SecurityCheckTarget> targets,
+                                                   RagBudget.Request budget) {
         long startedAt = System.nanoTime();
-        ConverseResponse response = bedrockRuntimeClient.converse(ConverseRequest.builder()
+        ConverseResponse response = budget.converse(bedrockRuntimeClient, ConverseRequest.builder()
                 .modelId(properties.modelId())
                 .system(SystemContentBlock.fromText(SYSTEM_PROMPT))
                 .messages(Message.builder()

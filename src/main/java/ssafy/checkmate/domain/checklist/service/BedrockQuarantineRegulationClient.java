@@ -34,6 +34,7 @@ import software.amazon.awssdk.services.bedrockruntime.model.ToolConfiguration;
 import software.amazon.awssdk.services.bedrockruntime.model.ToolInputSchema;
 import software.amazon.awssdk.services.bedrockruntime.model.ToolSpecification;
 import software.amazon.awssdk.services.bedrockruntime.model.ToolUseBlock;
+import ssafy.checkmate.domain.checklist.budget.RagBudget;
 import ssafy.checkmate.domain.regulation.entity.RegulationLevel;
 import ssafy.checkmate.global.config.BedrockProperties;
 
@@ -128,11 +129,15 @@ public class BedrockQuarantineRegulationClient implements QuarantineRegulationCl
     private final BedrockRuntimeClient bedrockRuntimeClient;
     private final BedrockProperties properties;
     private final QuarantineReranker reranker;
+    private final RagBudget ragBudget;
 
     @Override
     public QuarantineVerdict judge(ItemAnalysis item) {
-        String regulations = retrieveRegulations(item);
-        return generateVerdict(regulations, item);
+        try (RagBudget.Request budget = ragBudget.start(properties.modelId(), 2, reranker.isEnabled(),
+                properties.maxTokens())) {
+            String regulations = retrieveRegulations(item, budget);
+            return generateVerdict(regulations, item, budget);
+        }
     }
 
     /**
@@ -147,11 +152,15 @@ public class BedrockQuarantineRegulationClient implements QuarantineRegulationCl
      * 육류·유제품의 금지 근거인 "검역증명서 미첨부 과태료" 청크가 벡터 12~13위에 있어 좁히면 빠진다.
      */
     String retrieveRegulations(ItemAnalysis item) {
+        return retrieveRegulations(item, RagBudget.unmetered());
+    }
+
+    private String retrieveRegulations(ItemAnalysis item, RagBudget.Request budget) {
         RetrievalFilter filter = importFilter();
 
         long startedAt = System.nanoTime();
-        Set<String> chunks = new LinkedHashSet<>(itemChunks(itemQuery(item), filter));
-        chunks.addAll(retrieveFor(penaltyQuery(item), filter, properties.numberOfResults()));
+        Set<String> chunks = new LinkedHashSet<>(itemChunks(itemQuery(item), filter, budget));
+        chunks.addAll(retrieveFor(penaltyQuery(item), filter, properties.numberOfResults(), budget));
 
         log.info("[quarantine-check] 규정 검색 완료 청크={}건(중복 제거 후) 리랭크={} 소요={}ms",
                 chunks.size(), reranker.isEnabled(), elapsedMillisSince(startedAt));
@@ -159,11 +168,12 @@ public class BedrockQuarantineRegulationClient implements QuarantineRegulationCl
     }
 
     /** 리랭크가 실패하면 판정을 멈추지 않고 기존 방식(벡터 상위 number-of-results개)으로 돌아간다. */
-    private List<String> itemChunks(String query, RetrievalFilter filter) {
+    private List<String> itemChunks(String query, RetrievalFilter filter, RagBudget.Request budget) {
         if (!reranker.isEnabled()) {
-            return retrieveFor(query, filter, properties.numberOfResults());
+            return retrieveFor(query, filter, properties.numberOfResults(), budget);
         }
-        List<String> candidates = retrieveFor(query, filter, reranker.candidatePool());
+        List<String> candidates = retrieveFor(query, filter, reranker.candidatePool(), budget);
+        budget.chargeRerank(query, candidates);
         try {
             List<String> reranked = reranker.rerank(query, candidates);
             log.info("[quarantine-check] 품목 질의 리랭크 후보={}건 채택={}건", candidates.size(), reranked.size());
@@ -184,7 +194,9 @@ public class BedrockQuarantineRegulationClient implements QuarantineRegulationCl
         return "%s 휴대 반입 과태료 부과기준 자진 신고".formatted(item.category());
     }
 
-    private List<String> retrieveFor(String query, RetrievalFilter filter, int numberOfResults) {
+    private List<String> retrieveFor(String query, RetrievalFilter filter, int numberOfResults,
+                                     RagBudget.Request budget) {
+        budget.chargeRetrieve();
         RetrieveResponse response = bedrockAgentRuntimeClient.retrieve(RetrieveRequest.builder()
                 .knowledgeBaseId(properties.knowledgeBaseId())
                 .retrievalQuery(KnowledgeBaseQuery.builder().text(query).build())
@@ -217,9 +229,9 @@ public class BedrockQuarantineRegulationClient implements QuarantineRegulationCl
     }
 
     /** 도구 사용으로 출력 스키마를 강제해 판정을 받는다. */
-    private QuarantineVerdict generateVerdict(String regulations, ItemAnalysis item) {
+    private QuarantineVerdict generateVerdict(String regulations, ItemAnalysis item, RagBudget.Request budget) {
         long startedAt = System.nanoTime();
-        ConverseResponse response = bedrockRuntimeClient.converse(ConverseRequest.builder()
+        ConverseResponse response = budget.converse(bedrockRuntimeClient, ConverseRequest.builder()
                 .modelId(properties.modelId())
                 .system(SystemContentBlock.fromText(SYSTEM_PROMPT))
                 .messages(Message.builder()

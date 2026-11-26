@@ -72,3 +72,16 @@ bedrock:
     candidate-pool: ${BEDROCK_QUARANTINE_RERANK_POOL:50}
     top-n: ${BEDROCK_QUARANTINE_RERANK_TOP:5}
     min-score: ${BEDROCK_QUARANTINE_RERANK_MIN_SCORE:0.25}
+
+rag-budget:
+  enabled: ${RAG_BUDGET_ENABLED:false}
+  redis-url: ${UPSTASH_REDIS_REST_URL:}
+  redis-token: ${UPSTASH_REDIS_REST_TOKEN:}
+  daily-limit-krw: ${RAG_BUDGET_DAILY_LIMIT_KRW:10000}
+  effective-krw-per-usd: ${RAG_BUDGET_EFFECTIVE_KRW_PER_USD:1500}
+  retrieve-max-micro-usd: ${RAG_BUDGET_RETRIEVE_MAX_MICRO_USD:0}
+  max-input-tokens: ${RAG_BUDGET_MAX_INPUT_TOKENS:20000}
+  max-rerank-units: ${RAG_BUDGET_MAX_RERANK_UNITS:10}
+  count-tokens-region: ${RAG_BUDGET_COUNT_TOKENS_REGION:us-east-1}
+  test-api-enabled: ${RAG_BUDGET_TEST_API_ENABLED:false}
+  test-api-key: ${RAG_BUDGET_TEST_API_KEY:}

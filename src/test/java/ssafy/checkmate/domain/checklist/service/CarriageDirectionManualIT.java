@@ -14,6 +14,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import software.amazon.awssdk.services.bedrockagentruntime.BedrockAgentRuntimeClient;
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
 import ssafy.checkmate.domain.checklist.entity.CountryJurisdiction;
+import ssafy.checkmate.domain.checklist.budget.RagBudget;
 import ssafy.checkmate.global.config.BedrockProperties;
 
 /**
@@ -68,6 +69,9 @@ class CarriageDirectionManualIT {
     }
 
     private static final Path REPORT = Path.of("build", "rag-carriage-direction.md");
+
+    @Autowired
+    RagBudget ragBudget;
 
     @Autowired
     private BedrockAgentRuntimeClient bedrockAgentRuntimeClient;
@@ -140,7 +144,7 @@ class CarriageDirectionManualIT {
         BedrockProperties overridden = new BedrockProperties(properties.region(),
                 properties.knowledgeBaseId(), modelId, properties.numberOfResults(), properties.maxTokens());
         return new BedrockAviationRegulationClient(
-                bedrockAgentRuntimeClient, bedrockRuntimeClient, overridden);
+                bedrockAgentRuntimeClient, bedrockRuntimeClient, overridden, ragBudget);
     }
 
     private record Bag(String name, String carriageType) {
