@@ -100,6 +100,7 @@ checkmate/                  # Spring Boot API 서버
 ## 📄 문서 / 트러블슈팅
 
 - [검역 규정 RAG에 Rerank 적용 — 판정 정확도 유지, 입력 토큰 38% 절감](docs/troubleshooting/quarantine-rerank.md)
+- [반입 및 검역 API 처리율 제한 장치 설계](docs/troubleshooting/inspection-api-rate-limit.md)
 
 ## 👥 팀 소개
 
